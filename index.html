@@ -19,6 +19,10 @@
         select, input[type="file"], input[type="number"], input[type="text"], textarea { width: 100%; padding: 10px; margin-top: 5px; font-size: 1rem; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; background: white; }
         
         .rule-box { background: #FFF8E1; border-left: 4px solid #FFC107; padding: 10px 12px; font-size: 0.88rem; color: #5D4037; line-height: 1.5; border-radius: 4px; margin-top: 8px; }
+        .audio-status-tag { display: inline-block; margin-top: 6px; font-size: 0.85rem; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .audio-ok { background: #DCFCE7; color: #166534; }
+        .audio-warn { background: #FEF3C7; color: #92400E; }
+
         #btn-confirm-setup { background-color: #1976D2; color: white; padding: 15px; font-size: 1.2rem; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; flex-shrink: 0; box-shadow: 0 3px 6px rgba(25,118,210,0.3); }
         #btn-confirm-setup:hover { background-color: #1565C0; }
         #btn-preview { background-color: #0288D1; color: white; border: none; border-radius: 6px; padding: 10px 15px; font-weight: bold; cursor: pointer; white-space: nowrap; }
@@ -117,13 +121,14 @@
         </div>
 
         <div class="setup-group">
-            <label>2. 檢測音訊來源設定</label>
+            <label>2. 檢測音訊設定 (預設使用系統內建官方高音質音訊檔)</label>
             <select id="sel-audio-mode" onchange="toggleAudioUpload()">
-                <option value="builtin" selected>🔊 使用系統內建【運動部標準 20m 漸速折返跑】語音與節奏音</option>
-                <option value="custom">📂 載入本機官方 MP3 / WAV 檢測音訊檔 (搭配系統同步計趟)</option>
+                <option value="bundled" selected>🔊 系統內建官方檢測音訊檔 (pacer.mp3 - 清晰原聲)</option>
+                <option value="custom">📂 改由本機手動選擇其他 MP3 / WAV 音訊檔</option>
             </select>
+            <div id="bundled-audio-status" class="audio-status-tag audio-ok">✅ 已就緒：系統將自動播放內建高音質官方檢測音訊</div>
             <div id="custom-audio-box" style="display:none; margin-top: 10px;">
-                <span style="font-size: 0.85rem; color: #555;">請選擇漸速耐力折返跑官方音訊檔 (.mp3, .wav)：</span>
+                <span style="font-size: 0.85rem; color: #555;">請選擇漸速耐力折返跑音訊檔 (.mp3, .wav)：</span>
                 <input type="file" id="audio-file-upload" accept="audio/*">
             </div>
         </div>
@@ -168,13 +173,13 @@
                     <span class="dash-value" id="disp-completed-laps" style="color: #4ADE80;">0</span>
                 </div>
                 <div class="dash-card">
-                    <span class="dash-label">經過時間</span>
+                    <span class="dash-label">音訊經過時間</span>
                     <span class="dash-value" id="timer">00:00</span>
                 </div>
             </div>
 
             <div class="control-bar">
-                <button id="btn-start" class="control-btn" onclick="startPacerTest()">▶️ 播放音訊並開始測驗</button>
+                <button id="btn-start" class="control-btn" onclick="startPacerTest()">▶️ 播放官方音訊並開始測驗</button>
                 <button id="btn-pause" class="control-btn" onclick="pausePacerTest()">⏸️ 暫停</button>
                 <button id="btn-undo" class="control-btn" onclick="toggleUndoMode()">🔙 誤點收回</button>
                 <button id="btn-finish" class="control-btn" onclick="finishTest()">🏁 結束並結算成績</button>
@@ -183,7 +188,7 @@
                 <button id="btn-reset" class="control-btn" onclick="resetToSetup()">⚙️ 回到設定</button>
             </div>
 
-            <div id="status-banner">準備就緒：請受測者站於端線後，點擊「播放音訊並開始測驗」</div>
+            <div id="status-banner">準備就緒：請受測者站於端線後，點擊「播放官方音訊並開始測驗」</div>
         </div>
 
         <div id="camera-section">
@@ -212,13 +217,13 @@
         </div>
     </div>
 
-    <!-- 隱藏的原生音訊播放器（供自訂音訊檔使用） -->
-    <audio id="custom-audio-player"></audio>
+    <!-- 官方音訊播放器 (預設指向同目錄下的 pacer.mp3) -->
+    <audio id="pacer-audio-player" preload="auto"></audio>
 
     <script>
         // ==========================================
         // 標準 20m PACER 漸速耐力折返跑級別與趟數規範表 (Level 1 ~ 21)
-        // 每級固定約 60 秒，速度從 8.5 km/h 起跳，每級增加 0.5 km/h
+        // 精準對應官方音訊檔 (前 5 秒為起跑倒數，第 5.0 秒響第一聲開始第 1 級第 1 趟)
         // ==========================================
         const PACER_LEVELS = [
             { level: 1,  laps: 7,  speed: 8.5 },
@@ -244,11 +249,11 @@
             { level: 21, laps: 16, speed: 18.5 }
         ];
 
-        // 預先計算每一趟的精準時間軸 (累積秒數)
+        // 建立每一趟的精準時間軸 (完全對齊官方 MP3 音訊)
         let SHUTTLE_SCHEDULE = [];
         function buildShuttleSchedule() {
             SHUTTLE_SCHEDULE = [];
-            let currentTime = 5.0; // 前 5 秒為「測驗即將開始 5, 4, 3, 2, 1」倒數
+            let currentTime = 5.0; // 官方音訊前 5 秒為「測驗即將開始 5, 4, 3, 2, 1」
             let cumulativeLap = 0;
 
             PACER_LEVELS.forEach(lvl => {
@@ -261,8 +266,7 @@
                         lapInLevel: i,
                         startTime: currentTime,
                         endTime: currentTime + lapDuration,
-                        duration: lapDuration,
-                        isLevelStart: (i === 1)
+                        duration: lapDuration
                     });
                     currentTime += lapDuration;
                 }
@@ -279,22 +283,17 @@
         // 測驗狀態變數
         let isRunning = false;
         let isPaused = false;
-        let audioMode = 'builtin'; // 'builtin' or 'custom'
+        let audioMode = 'bundled'; // 'bundled' (pacer.mp3) or 'custom'
         let customAudioUrl = null;
-        let startTimeMs = 0;
-        let pausedElapsedMs = 0;
         let timerInterval = null;
 
         // 目前進度追蹤
         let currentLevel = 0;
         let currentInProgressLap = 0; // 目前正在跑第幾趟 (1-based)
         let completedValidLaps = 0;   // 已經完整跑完並響鈴的有效趟數 (0-based)
-        let lastAnnouncedStep = "";   // 避免重複播報
+        let lastBannerKey = "";
 
-        // Web Audio API 合成器 (用於產生標準三聲響/單聲響提示音)
-        let webAudioCtx = null;
-
-        // --- 網頁載入：初始化相機選項 ---
+        // --- 網頁載入：初始化相機選項與檢查內建音訊檔 ---
         window.addEventListener('load', async () => {
             const cameraSelect = document.getElementById('sel-camera');
             try {
@@ -313,12 +312,34 @@
             } catch (err) {
                 cameraSelect.innerHTML = '<option value="none">不錄影 (或無相機權限)</option>';
             }
+
+            // 檢查同目錄下的 pacer.mp3 是否存在
+            checkBundledAudio();
         });
+
+        async function checkBundledAudio() {
+            const statusEl = document.getElementById('bundled-audio-status');
+            try {
+                const response = await fetch('pacer.mp3', { method: 'HEAD' });
+                if (response.ok) {
+                    statusEl.className = 'audio-status-tag audio-ok';
+                    statusEl.innerText = '✅ 已偵測到系統內建官方高音質音訊檔 (pacer.mp3)';
+                } else {
+                    statusEl.className = 'audio-status-tag audio-warn';
+                    statusEl.innerText = '⚠️ 尚未偵測到 pacer.mp3（請確認已將音訊檔命名為 pacer.mp3 並上傳至 GitHub 同資料夾，或改用下方手動選檔）';
+                }
+            } catch (e) {
+                // 本機直接雙擊開啟 html 時可能受 CORS 限制，仍允許嘗試載入
+                statusEl.className = 'audio-status-tag audio-ok';
+                statusEl.innerText = '🔊 預設載入同資料夾內的 pacer.mp3 官方音訊檔';
+            }
+        }
 
         // --- 設定頁面交互 ---
         function toggleAudioUpload() {
             const mode = document.getElementById('sel-audio-mode').value;
             document.getElementById('custom-audio-box').style.display = (mode === 'custom') ? 'block' : 'none';
+            document.getElementById('bundled-audio-status').style.display = (mode === 'bundled') ? 'inline-block' : 'none';
         }
 
         document.getElementById('audio-file-upload').addEventListener('change', function(e) {
@@ -368,7 +389,7 @@
         function startSetup() {
             audioMode = document.getElementById('sel-audio-mode').value;
             if (audioMode === 'custom' && !customAudioUrl) {
-                alert('您選擇了自訂音訊檔模式，請先選擇 MP3 或 WAV 音訊檔案！');
+                alert('您選擇了手動選擇音訊檔模式，請先選取 MP3 或 WAV 音訊檔案！');
                 return;
             }
 
@@ -411,20 +432,19 @@
             updateSummaryStats();
             initCamera();
 
-            if (audioMode === 'custom') {
-                const player = document.getElementById('custom-audio-player');
-                player.src = customAudioUrl;
-            }
+            // 設定音訊播放器來源
+            const player = document.getElementById('pacer-audio-player');
+            player.src = (audioMode === 'bundled') ? 'pacer.mp3' : customAudioUrl;
+            player.load();
         }
 
         function resetVariables() {
             isRunning = false;
             isPaused = false;
-            pausedElapsedMs = 0;
             currentLevel = 0;
             currentInProgressLap = 0;
             completedValidLaps = 0;
-            lastAnnouncedStep = "";
+            lastBannerKey = "";
             document.getElementById('disp-level').innerText = "0";
             document.getElementById('disp-total-laps').innerText = "0";
             document.getElementById('disp-completed-laps').innerText = "0";
@@ -432,75 +452,35 @@
         }
 
         // ==========================================
-        // 語音與提示音合成引擎 (模擬運動部官方檢測音訊)
-        // ==========================================
-        function playBeep(freq = 880, duration = 0.25, type = 'sine') {
-            try {
-                if (!webAudioCtx) webAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                if (webAudioCtx.state === 'suspended') webAudioCtx.resume();
-                const osc = webAudioCtx.createOscillator();
-                const gain = webAudioCtx.createGain();
-                osc.type = type;
-                osc.frequency.setValueAtTime(freq, webAudioCtx.currentTime);
-                gain.gain.setValueAtTime(0.5, webAudioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, webAudioCtx.currentTime + duration);
-                osc.connect(gain);
-                gain.connect(webAudioCtx.destination);
-                osc.start();
-                osc.stop(webAudioCtx.currentTime + duration);
-            } catch (e) { console.error(e); }
-        }
-
-        function playLevelUpChime() {
-            // 升級時的三連音提示
-            playBeep(660, 0.12);
-            setTimeout(() => playBeep(880, 0.12), 130);
-            setTimeout(() => playBeep(1100, 0.25), 260);
-        }
-
-        function speakText(text) {
-            if (!('speechSynthesis' in window)) return;
-            window.speechSynthesis.cancel(); // 取消前一句避免堆積延遲
-            const utter = new SpeechSynthesisUtterance(text);
-            utter.lang = 'zh-TW';
-            utter.rate = 1.15; // 語速稍快以配合高強度節奏
-            window.speechSynthesis.speak(utter);
-        }
-
-        // ==========================================
-        // 測驗主計時與音訊同步迴圈
+        // 測驗主計時與官方音訊同步迴圈
         // ==========================================
         function startPacerTest() {
             if (isRunning && !isPaused) return;
 
-            if (!webAudioCtx) webAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            if (webAudioCtx.state === 'suspended') webAudioCtx.resume();
+            const player = document.getElementById('pacer-audio-player');
+            player.play().then(() => {
+                isRunning = true;
+                isPaused = false;
 
-            if (audioMode === 'custom') {
-                const player = document.getElementById('custom-audio-player');
-                player.play().catch(e => alert("無法播放音訊檔，請確認檔案格式。"));
-            }
+                document.getElementById('btn-start').style.display = 'none';
+                document.getElementById('btn-pause').style.display = 'inline-block';
+                document.getElementById('btn-pause').innerText = '⏸️ 暫停';
+                document.getElementById('btn-undo').style.display = 'inline-block';
+                document.getElementById('btn-finish').style.display = 'inline-block';
+                document.getElementById('btn-zero').style.display = 'inline-block';
 
-            startTimeMs = Date.now() - pausedElapsedMs;
-            isRunning = true;
-            isPaused = false;
+                if (mediaRecorder && mediaRecorder.state === 'inactive') {
+                    mediaRecorder.start(1000);
+                    document.getElementById('recording-indicator').style.display = 'block';
+                } else if (mediaRecorder && mediaRecorder.state === 'paused') {
+                    mediaRecorder.resume();
+                    document.getElementById('recording-indicator').style.display = 'block';
+                }
 
-            document.getElementById('btn-start').style.display = 'none';
-            document.getElementById('btn-pause').style.display = 'inline-block';
-            document.getElementById('btn-pause').innerText = '⏸️ 暫停';
-            document.getElementById('btn-undo').style.display = 'inline-block';
-            document.getElementById('btn-finish').style.display = 'inline-block';
-            document.getElementById('btn-zero').style.display = 'inline-block';
-
-            if (mediaRecorder && mediaRecorder.state === 'inactive') {
-                mediaRecorder.start(1000);
-                document.getElementById('recording-indicator').style.display = 'block';
-            } else if (mediaRecorder && mediaRecorder.state === 'paused') {
-                mediaRecorder.resume();
-                document.getElementById('recording-indicator').style.display = 'block';
-            }
-
-            timerInterval = setInterval(updatePacerLoop, 50);
+                timerInterval = setInterval(updatePacerLoop, 50);
+            }).catch(err => {
+                alert("無法播放音訊檔！\n\n請確認您已將官方音訊檔命名為「pacer.mp3」並上傳至 GitHub 專案同資料夾中，或回到設定畫面改用手動選取音訊檔。");
+            });
         }
 
         function pausePacerTest() {
@@ -508,20 +488,15 @@
             isRunning = false;
             isPaused = true;
             clearInterval(timerInterval);
-            pausedElapsedMs = Date.now() - startTimeMs;
 
-            if (audioMode === 'custom') {
-                document.getElementById('custom-audio-player').pause();
-            } else if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-            }
+            document.getElementById('pacer-audio-player').pause();
 
             if (isUndoMode) toggleUndoMode();
 
             document.getElementById('btn-pause').style.display = 'none';
             document.getElementById('btn-start').style.display = 'inline-block';
             document.getElementById('btn-start').innerText = '▶️ 繼續測驗';
-            document.getElementById('status-banner').innerText = '⏸️ 測驗已暫停';
+            document.getElementById('status-banner').innerText = '⏸️ 測驗與音訊已暫停';
 
             if (mediaRecorder && mediaRecorder.state === 'recording') {
                 mediaRecorder.pause();
@@ -532,13 +507,8 @@
         function updatePacerLoop() {
             if (!isRunning) return;
 
-            let elapsedSec = 0;
-            if (audioMode === 'custom') {
-                const player = document.getElementById('custom-audio-player');
-                elapsedSec = player.currentTime;
-            } else {
-                elapsedSec = (Date.now() - startTimeMs) / 1000;
-            }
+            const player = document.getElementById('pacer-audio-player');
+            let elapsedSec = player.currentTime;
 
             // 更新經過時間顯示
             let mins = Math.floor(elapsedSec / 60);
@@ -549,23 +519,18 @@
             if (elapsedSec < 5.0) {
                 let countdown = Math.ceil(5.0 - elapsedSec);
                 let stepKey = `prep-${countdown}`;
-                if (lastAnnouncedStep !== stepKey) {
-                    lastAnnouncedStep = stepKey;
+                if (lastBannerKey !== stepKey) {
+                    lastBannerKey = stepKey;
                     document.getElementById('status-banner').innerText = `📢 測驗即將開始... 倒數 ${countdown} 秒`;
-                    if (audioMode === 'builtin') {
-                        if (countdown === 5) speakText("測驗即將開始，5，4，3，2，1");
-                        if (countdown <= 3) playBeep(520, 0.12);
-                    }
                 }
                 return;
             }
 
-            // 2. 尋找目前時間對應的趟次
+            // 2. 尋找目前時間對應的趟次 (直接與音訊播放進度 currentTime 鎖定同步)
             let activeShuttle = SHUTTLE_SCHEDULE.find(s => elapsedSec >= s.startTime && elapsedSec < s.endTime);
 
-            if (!activeShuttle) {
-                // 全部 21 級完成
-                document.getElementById('status-banner').innerText = "🏆 已完成全部 21 級 (247 趟) 最高紀錄！";
+            if (!activeShuttle || player.ended) {
+                document.getElementById('status-banner').innerText = "🏆 音訊播放完畢（已完成最高級別紀錄）！";
                 finishTest(true);
                 return;
             }
@@ -578,35 +543,12 @@
             document.getElementById('disp-total-laps').innerText = currentInProgressLap;
             document.getElementById('disp-completed-laps').innerText = completedValidLaps;
 
-            // 3. 趟次開始瞬間觸發 (響鈴 + 語音播報)
+            // 3. 更新狀態提示橫幅
             let startStepKey = `start-${activeShuttle.totalLap}`;
-            if (lastAnnouncedStep !== startStepKey) {
-                lastAnnouncedStep = startStepKey;
-                let bannerMsg = `🏃 第 ${activeShuttle.level} 級 - 第 ${activeShuttle.lapInLevel} 趟 (總計第 ${activeShuttle.totalLap} 趟)`;
-                document.getElementById('status-banner').innerText = bannerMsg;
-
-                if (audioMode === 'builtin') {
-                    if (activeShuttle.isLevelStart) {
-                        playLevelUpChime();
-                        speakText(`第${activeShuttle.level}級開始，第${activeShuttle.lapInLevel}趟`);
-                    } else {
-                        playBeep(880, 0.25);
-                        speakText(`第${activeShuttle.level}級，第${activeShuttle.lapInLevel}趟`);
-                    }
-                }
-            }
-
-            // 4. 趟次結束前 3 秒節奏提示音 (對應影片中的 3, 2, 1 節奏提示)
-            let remainingInLap = activeShuttle.endTime - elapsedSec;
-            if (remainingInLap <= 2.4 && remainingInLap > 0.2) {
-                let beat = Math.ceil(remainingInLap / 0.8); // 約每 0.8 秒一拍 (3, 2, 1)
-                let beatKey = `beat-${activeShuttle.totalLap}-${beat}`;
-                if (lastAnnouncedStep !== beatKey && beat >= 1 && beat <= 3) {
-                    lastAnnouncedStep = beatKey;
-                    if (audioMode === 'builtin') {
-                        playBeep(600, 0.08);
-                    }
-                }
+            if (lastBannerKey !== startStepKey) {
+                lastBannerKey = startStepKey;
+                document.getElementById('status-banner').innerText = 
+                    `🏃 第 ${activeShuttle.level} 級 - 第 ${activeShuttle.lapInLevel} 趟 (總計第 ${activeShuttle.totalLap} 趟)`;
             }
         }
 
@@ -644,7 +586,7 @@
 
         function handleStudentClick(index) {
             if (!isRunning && !isPaused && completedValidLaps === 0 && currentInProgressLap === 0) {
-                alert("請先點擊「播放音訊並開始測驗」！");
+                alert("請先點擊「播放官方音訊並開始測驗」！");
                 return;
             }
 
@@ -674,14 +616,13 @@
 
                 renderGrid();
                 updateSummaryStats();
-                toggleUndoMode(); // 收回完成後自動退出收回模式
+                toggleUndoMode();
                 return;
             }
 
             // --- B. 正常判定模式 ---
-            if (student.isFinished) return; // 已結束測驗者不重複觸發
+            if (student.isFinished) return;
 
-            // 取得當下發生的級別與趟數資訊
             let eventLevel = currentLevel || 1;
             let eventTotalLap = currentInProgressLap || 1;
             let currentShuttleObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === eventTotalLap);
@@ -694,10 +635,8 @@
                 student.fail1Record = `${recordLabel} (總第${eventTotalLap}趟)`;
             } else if (student.failCount === 1) {
                 // 【第 2 次失敗】：該生測驗結束，並呈現測驗結果趟數
-                // 依運動部規範：累計第2次失敗即結束，成績為「已完整完成的有效趟數」
                 let validResultLaps = Math.max(0, completedValidLaps);
                 
-                // 換算有效總趟數對應的級別與級內趟數
                 let validLevel = 0;
                 let validLapInLevel = 0;
                 if (validResultLaps > 0) {
@@ -723,7 +662,7 @@
             let allDone = students.every(s => s.isFinished);
             if (allDone) {
                 setTimeout(() => {
-                    if (confirm("🎉 所有受測學生皆已完成測驗！是否立即結束音訊並結算成績？")) {
+                    if (confirm("🎉 所有受測學生皆已完成測驗！是否立即停止音訊並結算成績？")) {
                         finishTest(true);
                     }
                 }, 300);
@@ -769,13 +708,8 @@
             clearInterval(timerInterval);
             if (isUndoMode) toggleUndoMode();
 
-            if (audioMode === 'custom') {
-                document.getElementById('custom-audio-player').pause();
-            } else if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-            }
+            document.getElementById('pacer-audio-player').pause();
 
-            // 將尚未結束的學生，自動結算為目前已完成的有效趟數
             let validResultLaps = Math.max(0, completedValidLaps);
             let validLevel = 0;
             let validLapInLevel = 0;
@@ -830,7 +764,6 @@
             }));
 
             const worksheet = XLSX.utils.json_to_sheet(exportData);
-            // 設定欄寬讓報表更美觀
             worksheet['!cols'] = [
                 { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 24 }, { wch: 24 }, { wch: 18 }
             ];
@@ -853,13 +786,9 @@
             clearInterval(timerInterval);
             if (isUndoMode) toggleUndoMode();
 
-            if (audioMode === 'custom') {
-                const player = document.getElementById('custom-audio-player');
-                player.pause();
-                player.currentTime = 0;
-            } else if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-            }
+            const player = document.getElementById('pacer-audio-player');
+            player.pause();
+            player.currentTime = 0;
 
             resetVariables();
             students.forEach(s => {
@@ -876,7 +805,7 @@
             updateSummaryStats();
 
             document.getElementById('btn-start').style.display = 'inline-block';
-            document.getElementById('btn-start').innerText = '▶️ 播放音訊並開始測驗';
+            document.getElementById('btn-start').innerText = '▶️ 播放官方音訊並開始測驗';
             document.getElementById('btn-pause').style.display = 'none';
             document.getElementById('btn-undo').style.display = 'none';
             document.getElementById('btn-finish').style.display = 'none';
@@ -892,13 +821,9 @@
             clearInterval(timerInterval);
             if (isUndoMode) toggleUndoMode();
 
-            if (audioMode === 'custom') {
-                const player = document.getElementById('custom-audio-player');
-                player.pause();
-                player.currentTime = 0;
-            } else if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-            }
+            const player = document.getElementById('pacer-audio-player');
+            player.pause();
+            player.currentTime = 0;
 
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 mediaRecorder.onstop = null;
@@ -913,7 +838,7 @@
             document.getElementById('setup-section').style.display = 'flex';
             
             document.getElementById('btn-start').style.display = 'inline-block';
-            document.getElementById('btn-start').innerText = '▶️ 播放音訊並開始測驗';
+            document.getElementById('btn-start').innerText = '▶️ 播放官方音訊並開始測驗';
             document.getElementById('btn-pause').style.display = 'none';
             document.getElementById('btn-undo').style.display = 'none';
             document.getElementById('btn-finish').style.display = 'none';

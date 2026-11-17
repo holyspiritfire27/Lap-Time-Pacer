@@ -33,11 +33,11 @@
         /* 上半部：儀表板與控制區 */
         #top-section { padding: 12px 10px; text-align: center; background-color: #1E293B; color: white; flex-shrink: 0; transition: background-color 0.3s; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
         
-        .pacer-dashboard { display: flex; justify-content: center; align-items: center; gap: 15px; margin-bottom: 10px; flex-wrap: wrap; }
-        .dash-card { background: rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 14px; min-width: 85px; }
-        .dash-card .dash-label { font-size: 0.75rem; color: #94A3B8; display: block; }
-        .dash-card .dash-value { font-size: 1.8rem; font-weight: bold; font-variant-numeric: tabular-nums; color: #38BDF8; }
-        .dash-card.highlight .dash-value { color: #FACC15; font-size: 2.1rem; }
+        .pacer-dashboard { display: flex; justify-content: center; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+        .dash-card { background: rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 12px; min-width: 82px; }
+        .dash-card .dash-label { font-size: 0.72rem; color: #94A3B8; display: block; }
+        .dash-card .dash-value { font-size: 1.7rem; font-weight: bold; font-variant-numeric: tabular-nums; color: #38BDF8; }
+        .dash-card.highlight .dash-value { color: #FACC15; font-size: 2.0rem; }
         #timer { font-size: 1.4rem; color: #E2E8F0; }
 
         .control-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
@@ -55,7 +55,7 @@
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
 
         /* 狀態與語音進度提示列 */
-        #status-banner { font-size: 1rem; color: #FDE047; margin-top: 8px; font-weight: bold; min-height: 1.3rem; letter-spacing: 0.5px; }
+        #status-banner { font-size: 1.05rem; color: #FDE047; margin-top: 8px; font-weight: bold; min-height: 1.4rem; letter-spacing: 0.5px; }
 
         /* 中間：相機畫面 */
         #camera-section { height: 160px; background-color: #000; position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -114,8 +114,8 @@
             <input type="text" id="input-test-name" placeholder="輸入班級 / 組別名稱 (例如: 8年3班_第1組)">
             <div class="rule-box">
                 <strong>📋 運動部標準檢測與計趟邏輯：</strong><br>
-                • 受測者須在提示音響起前，至少<strong>單腳觸線</strong>，並於指示音響後雙腳於端線後折返。<br>
-                • <strong>第 1 次失敗</strong>：點擊學生按鍵，按鍵轉<strong>紅色</strong>並記錄失敗趟次。<br>
+                • 當音檔唸完「第 x 級，第 y 趟，3、2、1、<strong>beep</strong>」響鈴時，畫面提示列即呈現<strong>第 x 級 - 第 y 趟</strong>。<br>
+                • <strong>第 1 次失敗</strong>（響鈴時未及時觸線）：點擊學生按鍵，按鍵轉<strong>紅色</strong>並記錄失敗趟次。<br>
                 • <strong>第 2 次失敗（於第 y 趟響鈴後發生）</strong>：再次點擊該生按鍵，測驗即<strong>結束</strong>：<br>
                  - 若第 1 次失敗發生在更早之前（非第 y-1 趟），完成成績為 <strong>y - 1 趟</strong>。<br>
                  - 若第 1 次失敗發生在 <strong>第 y-1 趟</strong>（連續兩趟失敗），完成成績為 <strong>y - 2 趟</strong>。
@@ -167,12 +167,12 @@
                     <span class="dash-value" id="disp-level">0</span>
                 </div>
                 <div class="dash-card highlight">
-                    <span class="dash-label">目前進行趟數</span>
+                    <span class="dash-label">已響鈴趟數 (y)</span>
                     <span class="dash-value" id="disp-total-laps">0</span>
                 </div>
                 <div class="dash-card">
-                    <span class="dash-label">已響鈴完成趟數</span>
-                    <span class="dash-value" id="disp-completed-laps" style="color: #4ADE80;">0</span>
+                    <span class="dash-label">下一趟目標</span>
+                    <span class="dash-value" id="disp-next-lap" style="color: #4ADE80;">1</span>
                 </div>
                 <div class="dash-card">
                     <span class="dash-label">音訊經過時間</span>
@@ -225,10 +225,13 @@
     <script>
         // ==========================================
         // 標準 20m PACER 漸速耐力折返跑級別與趟數規範表 (Level 1 ~ 21)
-        // 精準對應官方音訊檔 (前 5 秒為起跑倒數，第 5.0 秒響第一聲開始第 1 級第 1 趟)
+        // 精準對齊官方音訊檔 (pacer.mp3)：
+        // • 0.0s ~ 8.5s：「測驗即將開始 5, 4, 3, 2, 1 [BEEP at 8.5s]」
+        // • 第 1 級每趟為 8.50 秒 (7 趟共 59.5 秒，第 2 級準時於 01:08.0 開始)
+        // • 第 2 ~ 21 級每趟為 20 / (speed / 3.6) 秒
         // ==========================================
         const PACER_LEVELS = [
-            { level: 1,  laps: 7,  speed: 8.5 },
+            { level: 1,  laps: 7,  speed: 8.5,  customDuration: 8.50 },
             { level: 2,  laps: 8,  speed: 9.0 },
             { level: 3,  laps: 8,  speed: 9.5 },
             { level: 4,  laps: 9,  speed: 10.0 },
@@ -251,15 +254,17 @@
             { level: 21, laps: 16, speed: 18.5 }
         ];
 
+        const INTRO_END_TIME = 8.5; // 00:08.5 響第一聲起跑音
+
         // 建立每一趟的精準時間軸 (完全對齊官方 MP3 音訊)
         let SHUTTLE_SCHEDULE = [];
         function buildShuttleSchedule() {
             SHUTTLE_SCHEDULE = [];
-            let currentTime = 5.0; // 官方音訊前 5 秒為「測驗即將開始 5, 4, 3, 2, 1」
+            let currentTime = INTRO_END_TIME;
             let cumulativeLap = 0;
 
             PACER_LEVELS.forEach(lvl => {
-                let lapDuration = 20 / (lvl.speed * 1000 / 3600); // 20公尺所需秒數
+                let lapDuration = lvl.customDuration || (20 / (lvl.speed * 1000 / 3600));
                 for (let i = 1; i <= lvl.laps; i++) {
                     cumulativeLap++;
                     SHUTTLE_SCHEDULE.push({
@@ -267,7 +272,7 @@
                         level: lvl.level,
                         lapInLevel: i,
                         startTime: currentTime,
-                        endTime: currentTime + lapDuration,
+                        beepTime: currentTime + lapDuration, // 該趟「第x級 第y趟 3 2 1 beep」響鈴時刻
                         duration: lapDuration
                     });
                     currentTime += lapDuration;
@@ -277,24 +282,19 @@
         buildShuttleSchedule();
 
         /**
-         * 取得目前裁判點擊時所對應的「判定趟次 y」
-         * 說明：第 y 趟的截止響鈴 (3, 2, 1 beep) 發生在 endTime，
-         * 裁判目視未觸線後按下按鍵會有 0.5 ~ 2.5 秒反應時間，
-         * 因此將 endTime 後方至下一趟 45% 時間內都歸屬於「第 y 趟」的判定視窗，
-         * 避免響鈴後剛進入下一趟語音時點擊造成趟次多算 1 趟。
+         * 取得目前音訊已響鈴完成（紅色框應顯示）的最後一趟
+         * 當音檔指令「第x級 第y趟 3 2 1 beep」響鈴時 (elapsedSec >= beepTime)，才回傳第 y 趟
          */
-        function getJudgedLap(elapsedSec) {
+        function getLastBeepedShuttle(elapsedSec) {
+            let last = null;
             for (let i = 0; i < SHUTTLE_SCHEDULE.length; i++) {
-                let s = SHUTTLE_SCHEDULE[i];
-                let nextDuration = (i + 1 < SHUTTLE_SCHEDULE.length)
-                    ? SHUTTLE_SCHEDULE[i + 1].duration
-                    : s.duration;
-                let windowEnd = s.endTime + 0.45 * nextDuration;
-                if (elapsedSec < windowEnd) {
-                    return s.totalLap;
+                if (elapsedSec >= SHUTTLE_SCHEDULE[i].beepTime) {
+                    last = SHUTTLE_SCHEDULE[i];
+                } else {
+                    break;
                 }
             }
-            return SHUTTLE_SCHEDULE[SHUTTLE_SCHEDULE.length - 1].totalLap;
+            return last;
         }
 
         // --- 全局狀態變數 ---
@@ -310,10 +310,9 @@
         let customAudioUrl = null;
         let timerInterval = null;
 
-        // 目前進度追蹤
-        let currentLevel = 0;
-        let currentInProgressLap = 0; // 目前正在跑第幾趟 (1-based)
-        let completedValidLaps = 0;   // 已經完整響鈴結束的趟數 (0-based)
+        // 目前已響鈴顯示進度 (與紅色框 100% 同步)
+        let displayedLevel = 0;
+        let displayedTotalLap = 0; // 目前紅色框呈現的「總計第 y 趟」
         let lastBannerKey = "";
 
         // --- 網頁載入：初始化相機選項與檢查內建音訊檔 ---
@@ -463,13 +462,12 @@
         function resetVariables() {
             isRunning = false;
             isPaused = false;
-            currentLevel = 0;
-            currentInProgressLap = 0;
-            completedValidLaps = 0;
+            displayedLevel = 0;
+            displayedTotalLap = 0;
             lastBannerKey = "";
             document.getElementById('disp-level').innerText = "0";
             document.getElementById('disp-total-laps').innerText = "0";
-            document.getElementById('disp-completed-laps').innerText = "0";
+            document.getElementById('disp-next-lap').innerText = "1";
             document.getElementById('timer').innerText = "00:00";
         }
 
@@ -537,40 +535,52 @@
             let secs = Math.floor(elapsedSec % 60);
             document.getElementById('timer').innerText = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
 
-            // 1. 起跑前 5 秒倒數階段 (0.0s ~ 5.0s)
-            if (elapsedSec < 5.0) {
-                let countdown = Math.ceil(5.0 - elapsedSec);
-                let stepKey = `prep-${countdown}`;
-                if (lastBannerKey !== stepKey) {
-                    lastBannerKey = stepKey;
-                    document.getElementById('status-banner').innerText = `📢 測驗即將開始... 倒數 ${countdown} 秒`;
-                }
-                return;
-            }
-
-            // 2. 尋找目前時間對應的趟次
-            let activeShuttle = SHUTTLE_SCHEDULE.find(s => elapsedSec >= s.startTime && elapsedSec < s.endTime);
-
-            if (!activeShuttle || player.ended) {
+            if (player.ended) {
                 document.getElementById('status-banner').innerText = "🏆 音訊播放完畢（已完成最高級別紀錄）！";
                 finishTest(true);
                 return;
             }
 
-            currentLevel = activeShuttle.level;
-            currentInProgressLap = activeShuttle.totalLap;
-            completedValidLaps = activeShuttle.totalLap - 1;
+            // 1. 起跑前前導倒數 (0.0s ~ 8.5s：「測驗即將開始 5 4 3 2 1 beep」)
+            if (elapsedSec < INTRO_END_TIME) {
+                if (lastBannerKey !== "prep") {
+                    lastBannerKey = "prep";
+                    document.getElementById('status-banner').innerText = "📢 測驗即將開始... 準備起跑";
+                }
+                return;
+            }
 
-            document.getElementById('disp-level').innerText = currentLevel;
-            document.getElementById('disp-total-laps').innerText = currentInProgressLap;
-            document.getElementById('disp-completed-laps').innerText = completedValidLaps;
+            // 2. 取得已響鈴（「第x級 第y趟 3 2 1 beep」）的最新趟次
+            let beepedShuttle = getLastBeepedShuttle(elapsedSec);
 
-            // 3. 更新狀態提示橫幅
-            let startStepKey = `start-${activeShuttle.totalLap}`;
-            if (lastBannerKey !== startStepKey) {
-                lastBannerKey = startStepKey;
+            if (!beepedShuttle) {
+                // 8.5s ~ 17.0s：已起跑，正在進行第 1 級第 1 趟，等待「第一級開始，第一趟 3 2 1 beep」響鈴
+                displayedLevel = 1;
+                displayedTotalLap = 0;
+                document.getElementById('disp-level').innerText = "1";
+                document.getElementById('disp-total-laps').innerText = "0";
+                document.getElementById('disp-next-lap').innerText = "1";
+
+                if (lastBannerKey !== "wait-first-beep") {
+                    lastBannerKey = "wait-first-beep";
+                    document.getElementById('status-banner').innerText = "🏃 起跑！等待第 1 級 - 第 1 趟響鈴...";
+                }
+                return;
+            }
+
+            // 3. 當「第x級 第y趟 3 2 1 beep」響鈴後，紅色框與儀表板即呈現「第x級 - 第y趟」
+            displayedLevel = beepedShuttle.level;
+            displayedTotalLap = beepedShuttle.totalLap;
+
+            document.getElementById('disp-level').innerText = displayedLevel;
+            document.getElementById('disp-total-laps').innerText = displayedTotalLap;
+            document.getElementById('disp-next-lap').innerText = Math.min(SHUTTLE_SCHEDULE.length, displayedTotalLap + 1);
+
+            let bannerKey = `beep-${beepedShuttle.totalLap}`;
+            if (lastBannerKey !== bannerKey) {
+                lastBannerKey = bannerKey;
                 document.getElementById('status-banner').innerText = 
-                    `🏃 第 ${activeShuttle.level} 級 - 第 ${activeShuttle.lapInLevel} 趟 (總計第 ${activeShuttle.totalLap} 趟)`;
+                    `🏃 第 ${beepedShuttle.level} 級 - 第 ${beepedShuttle.lapInLevel} 趟 (總計第 ${beepedShuttle.totalLap} 趟)`;
             }
         }
 
@@ -627,7 +637,6 @@
                 }
 
                 if (student.isFinished) {
-                    // 從「失敗2次(結束)」退回「失敗1次(紅色警告)」
                     student.isFinished = false;
                     student.failCount = 1;
                     student.fail2Lap = 0;
@@ -636,7 +645,6 @@
                     student.finalLevel = 0;
                     student.finalLapInLevel = 0;
                 } else if (student.failCount === 1) {
-                    // 從「失敗1次(紅色警告)」退回「正常測驗」
                     student.failCount = 0;
                     student.fail1Lap = 0;
                     student.fail1Record = "-";
@@ -651,8 +659,8 @@
             // --- B. 正常判定模式 ---
             if (student.isFinished) return;
 
-            // 透過緩衝判定視窗取得「實際失敗發生的趟次 y」
-            let y = getJudgedLap(player.currentTime);
+            // 以目前紅色框呈現的「已響鈴趟次 y」作為本次失敗趟次（若尚未響第一趟鈴則為第 1 趟）
+            let y = displayedTotalLap > 0 ? displayedTotalLap : 1;
             let shuttleObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === y) || SHUTTLE_SCHEDULE[0];
             let recordLabel = `第${shuttleObj.level}級-第${shuttleObj.lapInLevel}趟`;
 
@@ -733,7 +741,7 @@
         // 測驗結束、歸零與 Excel 匯出
         // ==========================================
         function finishTest(autoTrigger = false) {
-            if (!autoTrigger && !confirm("確定要結束測驗並進行結算嗎？\n(尚未失敗2次的學生，將以目前已完成的有效趟數作為最終成績)")) {
+            if (!autoTrigger && !confirm("確定要結束測驗並進行結算嗎？\n(尚未失敗2次的學生，將以目前已響鈴完成的有效趟數作為最終成績)")) {
                 return;
             }
 
@@ -745,12 +753,11 @@
             const player = document.getElementById('pacer-audio-player');
             player.pause();
 
-            // 計算截至目前為止已完整響鈴結束的趟數
-            let completedByBeep = SHUTTLE_SCHEDULE.filter(s => player.currentTime >= s.endTime).length;
+            let lastBeeped = getLastBeepedShuttle(player.currentTime);
+            let completedByBeep = lastBeeped ? lastBeeped.totalLap : 0;
 
             students.forEach(s => {
                 if (!s.isFinished) {
-                    // 若該生目前有 1 次失敗，且失敗就發生在剛結束的那一趟，則該趟不算完成，須再減 1
                     let studentLaps = (s.failCount === 1 && s.fail1Lap >= completedByBeep)
                         ? Math.max(0, completedByBeep - 1)
                         : completedByBeep;

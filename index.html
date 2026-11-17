@@ -18,7 +18,7 @@
         .setup-group label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
         select, input[type="file"], input[type="number"], input[type="text"], textarea { width: 100%; padding: 10px; margin-top: 5px; font-size: 1rem; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; background: white; }
         
-        .rule-box { background: #FFF8E1; border-left: 4px solid #FFC107; padding: 10px 12px; font-size: 0.88rem; color: #5D4037; line-height: 1.5; border-radius: 4px; margin-top: 8px; }
+        .rule-box { background: #FFF8E1; border-left: 4px solid #FFC107; padding: 10px 12px; font-size: 0.88rem; color: #5D4037; line-height: 1.6; border-radius: 4px; margin-top: 8px; }
         .audio-status-tag { display: inline-block; margin-top: 6px; font-size: 0.85rem; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
         .audio-ok { background: #DCFCE7; color: #166534; }
         .audio-warn { background: #FEF3C7; color: #92400E; }
@@ -113,10 +113,12 @@
             <label>1. 班級與組別設定</label>
             <input type="text" id="input-test-name" placeholder="輸入班級 / 組別名稱 (例如: 8年3班_第1組)">
             <div class="rule-box">
-                <strong>📋 運動部標準檢測規則：</strong><br>
+                <strong>📋 運動部標準檢測與計趟邏輯：</strong><br>
                 • 受測者須在提示音響起前，至少<strong>單腳觸線</strong>，並於指示音響後雙腳於端線後折返。<br>
-                • <strong>第 1 次失敗</strong>（未及時觸線或搶跑）：點擊學生按鍵，按鍵轉<strong>紅色</strong>並警告。<br>
-                • <strong>第 2 次失敗</strong>：再次點擊該生按鍵，測驗即<strong>結束</strong>並鎖定最終完成趟數。
+                • <strong>第 1 次失敗</strong>：點擊學生按鍵，按鍵轉<strong>紅色</strong>並記錄失敗趟次。<br>
+                • <strong>第 2 次失敗（於第 y 趟響鈴後發生）</strong>：再次點擊該生按鍵，測驗即<strong>結束</strong>：<br>
+                 - 若第 1 次失敗發生在更早之前（非第 y-1 趟），完成成績為 <strong>y - 1 趟</strong>。<br>
+                 - 若第 1 次失敗發生在 <strong>第 y-1 趟</strong>（連續兩趟失敗），完成成績為 <strong>y - 2 趟</strong>。
             </div>
         </div>
 
@@ -169,7 +171,7 @@
                     <span class="dash-value" id="disp-total-laps">0</span>
                 </div>
                 <div class="dash-card">
-                    <span class="dash-label">已完成有效趟數</span>
+                    <span class="dash-label">已響鈴完成趟數</span>
                     <span class="dash-value" id="disp-completed-laps" style="color: #4ADE80;">0</span>
                 </div>
                 <div class="dash-card">
@@ -274,6 +276,27 @@
         }
         buildShuttleSchedule();
 
+        /**
+         * 取得目前裁判點擊時所對應的「判定趟次 y」
+         * 說明：第 y 趟的截止響鈴 (3, 2, 1 beep) 發生在 endTime，
+         * 裁判目視未觸線後按下按鍵會有 0.5 ~ 2.5 秒反應時間，
+         * 因此將 endTime 後方至下一趟 45% 時間內都歸屬於「第 y 趟」的判定視窗，
+         * 避免響鈴後剛進入下一趟語音時點擊造成趟次多算 1 趟。
+         */
+        function getJudgedLap(elapsedSec) {
+            for (let i = 0; i < SHUTTLE_SCHEDULE.length; i++) {
+                let s = SHUTTLE_SCHEDULE[i];
+                let nextDuration = (i + 1 < SHUTTLE_SCHEDULE.length)
+                    ? SHUTTLE_SCHEDULE[i + 1].duration
+                    : s.duration;
+                let windowEnd = s.endTime + 0.45 * nextDuration;
+                if (elapsedSec < windowEnd) {
+                    return s.totalLap;
+                }
+            }
+            return SHUTTLE_SCHEDULE[SHUTTLE_SCHEDULE.length - 1].totalLap;
+        }
+
         // --- 全局狀態變數 ---
         let students = [];
         let importedNames = [];
@@ -283,14 +306,14 @@
         // 測驗狀態變數
         let isRunning = false;
         let isPaused = false;
-        let audioMode = 'bundled'; // 'bundled' (pacer.mp3) or 'custom'
+        let audioMode = 'bundled';
         let customAudioUrl = null;
         let timerInterval = null;
 
         // 目前進度追蹤
         let currentLevel = 0;
         let currentInProgressLap = 0; // 目前正在跑第幾趟 (1-based)
-        let completedValidLaps = 0;   // 已經完整跑完並響鈴的有效趟數 (0-based)
+        let completedValidLaps = 0;   // 已經完整響鈴結束的趟數 (0-based)
         let lastBannerKey = "";
 
         // --- 網頁載入：初始化相機選項與檢查內建音訊檔 ---
@@ -313,7 +336,6 @@
                 cameraSelect.innerHTML = '<option value="none">不錄影 (或無相機權限)</option>';
             }
 
-            // 檢查同目錄下的 pacer.mp3 是否存在
             checkBundledAudio();
         });
 
@@ -329,7 +351,6 @@
                     statusEl.innerText = '⚠️ 尚未偵測到 pacer.mp3（請確認已將音訊檔命名為 pacer.mp3 並上傳至 GitHub 同資料夾，或改用下方手動選檔）';
                 }
             } catch (e) {
-                // 本機直接雙擊開啟 html 時可能受 CORS 限制，仍允許嘗試載入
                 statusEl.className = 'audio-status-tag audio-ok';
                 statusEl.innerText = '🔊 預設載入同資料夾內的 pacer.mp3 官方音訊檔';
             }
@@ -412,11 +433,13 @@
                 name: name,
                 failCount: 0,           // 0: 正常, 1: 失敗1次(紅燈), 2: 失敗2次(測驗結束)
                 isFinished: false,
+                fail1Lap: 0,            // 記錄第 1 次失敗發生在總第幾趟
+                fail2Lap: 0,            // 記錄第 2 次失敗發生在總第幾趟
                 finalTotalLaps: 0,      // 最終完成的有效總趟數
                 finalLevel: 0,
                 finalLapInLevel: 0,
-                fail1Record: "-",       // 第1次失敗時發生的級別與趟數
-                fail2Record: "-"        // 第2次失敗時發生的級別與趟數
+                fail1Record: "-",
+                fail2Record: "-"
             }));
 
             if (previewStream) {
@@ -432,7 +455,6 @@
             updateSummaryStats();
             initCamera();
 
-            // 設定音訊播放器來源
             const player = document.getElementById('pacer-audio-player');
             player.src = (audioMode === 'bundled') ? 'pacer.mp3' : customAudioUrl;
             player.load();
@@ -526,7 +548,7 @@
                 return;
             }
 
-            // 2. 尋找目前時間對應的趟次 (直接與音訊播放進度 currentTime 鎖定同步)
+            // 2. 尋找目前時間對應的趟次
             let activeShuttle = SHUTTLE_SCHEDULE.find(s => elapsedSec >= s.startTime && elapsedSec < s.endTime);
 
             if (!activeShuttle || player.ended) {
@@ -537,7 +559,7 @@
 
             currentLevel = activeShuttle.level;
             currentInProgressLap = activeShuttle.totalLap;
-            completedValidLaps = activeShuttle.totalLap - 1; // 正在跑第 N 趟，代表已完整結束 N-1 趟
+            completedValidLaps = activeShuttle.totalLap - 1;
 
             document.getElementById('disp-level').innerText = currentLevel;
             document.getElementById('disp-total-laps').innerText = currentInProgressLap;
@@ -553,7 +575,7 @@
         }
 
         // ==========================================
-        // 學生按鈕渲染與【失敗 1 次 / 失敗 2 次】判定邏輯
+        // 學生按鈕渲染與【失敗 1 次 / 失敗 2 次 (y-1 與 y-2)】判定邏輯
         // ==========================================
         function renderGrid() {
             const grid = document.getElementById('student-grid');
@@ -570,7 +592,10 @@
                     statusHtml = `⚠️ 失敗 1 次<br><small>(${student.fail1Record})</small>`;
                 } else if (student.isFinished) {
                     btn.classList.add('finished');
-                    statusHtml = `🏁 結束：${student.finalTotalLaps} 趟<br><small>(第${student.finalLevel}級-${student.finalLapInLevel}趟)</small>`;
+                    let levelText = student.finalTotalLaps > 0
+                        ? `(第${student.finalLevel}級-${student.finalLapInLevel}趟)`
+                        : `(未完成第1趟)`;
+                    statusHtml = `🏁 結束：${student.finalTotalLaps} 趟<br><small>${levelText}</small>`;
                 }
 
                 btn.innerHTML = `
@@ -585,7 +610,8 @@
         }
 
         function handleStudentClick(index) {
-            if (!isRunning && !isPaused && completedValidLaps === 0 && currentInProgressLap === 0) {
+            const player = document.getElementById('pacer-audio-player');
+            if (!isRunning && !isPaused && player.currentTime === 0) {
                 alert("請先點擊「播放官方音訊並開始測驗」！");
                 return;
             }
@@ -604,6 +630,7 @@
                     // 從「失敗2次(結束)」退回「失敗1次(紅色警告)」
                     student.isFinished = false;
                     student.failCount = 1;
+                    student.fail2Lap = 0;
                     student.fail2Record = "-";
                     student.finalTotalLaps = 0;
                     student.finalLevel = 0;
@@ -611,6 +638,7 @@
                 } else if (student.failCount === 1) {
                     // 從「失敗1次(紅色警告)」退回「正常測驗」
                     student.failCount = 0;
+                    student.fail1Lap = 0;
                     student.fail1Record = "-";
                 }
 
@@ -623,20 +651,25 @@
             // --- B. 正常判定模式 ---
             if (student.isFinished) return;
 
-            let eventLevel = currentLevel || 1;
-            let eventTotalLap = currentInProgressLap || 1;
-            let currentShuttleObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === eventTotalLap);
-            let eventLapInLevel = currentShuttleObj ? currentShuttleObj.lapInLevel : 1;
-            let recordLabel = `第${eventLevel}級-第${eventLapInLevel}趟`;
+            // 透過緩衝判定視窗取得「實際失敗發生的趟次 y」
+            let y = getJudgedLap(player.currentTime);
+            let shuttleObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === y) || SHUTTLE_SCHEDULE[0];
+            let recordLabel = `第${shuttleObj.level}級-第${shuttleObj.lapInLevel}趟`;
 
             if (student.failCount === 0) {
-                // 【第 1 次失敗】：姓名鍵變紅色，並顯示失敗 1 次
+                // 【第 1 次失敗】：記錄失敗發生的趟次 fail1Lap = y
                 student.failCount = 1;
-                student.fail1Record = `${recordLabel} (總第${eventTotalLap}趟)`;
+                student.fail1Lap = y;
+                student.fail1Record = `${recordLabel} (總第${y}趟)`;
             } else if (student.failCount === 1) {
-                // 【第 2 次失敗】：該生測驗結束，並呈現測驗結果趟數
-                let validResultLaps = Math.max(0, completedValidLaps);
-                
+                // 【第 2 次失敗】：發生在第 y 趟
+                // 1. 若第 1 次失敗發生在第 y-1 趟（連續兩趟失敗），則第 y-1 與第 y 趟皆未完成 -> 成績為 y - 2 趟
+                // 2. 若第 1 次失敗發生在更早之前（非連續），則僅第 y 趟未完成 -> 成績為 y - 1 趟
+                let isConsecutiveFail = (student.fail1Lap === y - 1);
+                let validResultLaps = isConsecutiveFail
+                    ? Math.max(0, y - 2)
+                    : Math.max(0, y - 1);
+
                 let validLevel = 0;
                 let validLapInLevel = 0;
                 if (validResultLaps > 0) {
@@ -648,11 +681,12 @@
                 }
 
                 student.failCount = 2;
+                student.fail2Lap = y;
                 student.isFinished = true;
                 student.finalTotalLaps = validResultLaps;
                 student.finalLevel = validLevel;
                 student.finalLapInLevel = validLapInLevel;
-                student.fail2Record = `${recordLabel} (總第${eventTotalLap}趟)`;
+                student.fail2Record = `${recordLabel} (總第${y}趟)${isConsecutiveFail ? ' [連續失敗]' : ''}`;
             }
 
             renderGrid();
@@ -708,23 +742,31 @@
             clearInterval(timerInterval);
             if (isUndoMode) toggleUndoMode();
 
-            document.getElementById('pacer-audio-player').pause();
+            const player = document.getElementById('pacer-audio-player');
+            player.pause();
 
-            let validResultLaps = Math.max(0, completedValidLaps);
-            let validLevel = 0;
-            let validLapInLevel = 0;
-            if (validResultLaps > 0) {
-                let validObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === validResultLaps);
-                if (validObj) {
-                    validLevel = validObj.level;
-                    validLapInLevel = validObj.lapInLevel;
-                }
-            }
+            // 計算截至目前為止已完整響鈴結束的趟數
+            let completedByBeep = SHUTTLE_SCHEDULE.filter(s => player.currentTime >= s.endTime).length;
 
             students.forEach(s => {
                 if (!s.isFinished) {
+                    // 若該生目前有 1 次失敗，且失敗就發生在剛結束的那一趟，則該趟不算完成，須再減 1
+                    let studentLaps = (s.failCount === 1 && s.fail1Lap >= completedByBeep)
+                        ? Math.max(0, completedByBeep - 1)
+                        : completedByBeep;
+
+                    let validLevel = 0;
+                    let validLapInLevel = 0;
+                    if (studentLaps > 0) {
+                        let validObj = SHUTTLE_SCHEDULE.find(item => item.totalLap === studentLaps);
+                        if (validObj) {
+                            validLevel = validObj.level;
+                            validLapInLevel = validObj.lapInLevel;
+                        }
+                    }
+
                     s.isFinished = true;
-                    s.finalTotalLaps = validResultLaps;
+                    s.finalTotalLaps = studentLaps;
                     s.finalLevel = validLevel;
                     s.finalLapInLevel = validLapInLevel;
                 }
@@ -756,7 +798,7 @@
             let exportData = students.map(s => ({
                 "道次": s.lane,
                 "學生姓名": s.name,
-                "測驗結果(總趟數)": s.finalTotalLaps,
+                "測驗結果(完成總趟數)": s.finalTotalLaps,
                 "完成級別-趟數": s.finalTotalLaps > 0 ? `第 ${s.finalLevel} 級 - 第 ${s.finalLapInLevel} 趟` : "0 趟",
                 "第1次失敗紀錄": s.fail1Record,
                 "第2次失敗紀錄(結束)": s.fail2Record,
@@ -765,7 +807,7 @@
 
             const worksheet = XLSX.utils.json_to_sheet(exportData);
             worksheet['!cols'] = [
-                { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 24 }, { wch: 24 }, { wch: 18 }
+                { wch: 8 }, { wch: 14 }, { wch: 20 }, { wch: 22 }, { wch: 24 }, { wch: 30 }, { wch: 18 }
             ];
 
             const workbook = XLSX.utils.book_new();
@@ -794,6 +836,8 @@
             students.forEach(s => {
                 s.failCount = 0;
                 s.isFinished = false;
+                s.fail1Lap = 0;
+                s.fail2Lap = 0;
                 s.finalTotalLaps = 0;
                 s.finalLevel = 0;
                 s.finalLapInLevel = 0;

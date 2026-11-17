@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lap-time Pacer - 漸速耐力折返跑測驗系統</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; background-color: #f0f2f5; transition: background-color 0.3s; }
+        
+        /* ===== 設定畫面 ===== */
+        #setup-section { padding: 20px; background: white; flex-grow: 1; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; max-width: 800px; margin: 0 auto; width: 100%; box-sizing: border-box; box-shadow: 0 0 15px rgba(0,0,0,0.05); }
+        .header-title { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #1976D2; padding-bottom: 10px; }
+        .header-title h2 { margin: 0; color: #1565C0; font-size: 1.5rem; }
+        .badge-version { background: #E3F2FD; color: #1565C0; padding: 4px 10px; border-radius: 12px; font-size: 0.85rem; font-weight: bold; }
+        
+        .setup-group { border: 1px solid #dce1e7; padding: 15px; border-radius: 8px; background: #fafbfc; }
+        .setup-group label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
+        select, input[type="file"], input[type="number"], input[type="text"], textarea { width: 100%; padding: 10px; margin-top: 5px; font-size: 1rem; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; background: white; }
+        
+        .rule-box { background: #FFF8E1; border-left: 4px solid #FFC107; padding: 10px 12px; font-size: 0.88rem; color: #5D4037; line-height: 1.5; border-radius: 4px; margin-top: 8px; }
+        #btn-confirm-setup { background-color: #1976D2; color: white; padding: 15px; font-size: 1.2rem; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; flex-shrink: 0; box-shadow: 0 3px 6px rgba(25,118,210,0.3); }
+        #btn-confirm-setup:hover { background-color: #1565C0; }
+        #btn-preview { background-color: #0288D1; color: white; border: none; border-radius: 6px; padding: 10px 15px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+
+        /* ===== 測驗畫面 ===== */
+        #test-section { display: none; flex-direction: column; height: 100vh; position: relative; }
+        
+        /* 上半部：儀表板與控制區 */
+        #top-section { padding: 12px 10px; text-align: center; background-color: #1E293B; color: white; flex-shrink: 0; transition: background-color 0.3s; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        
+        .pacer-dashboard { display: flex; justify-content: center; align-items: center; gap: 15px; margin-bottom: 10px; flex-wrap: wrap; }
+        .dash-card { background: rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 14px; min-width: 85px; }
+        .dash-card .dash-label { font-size: 0.75rem; color: #94A3B8; display: block; }
+        .dash-card .dash-value { font-size: 1.8rem; font-weight: bold; font-variant-numeric: tabular-nums; color: #38BDF8; }
+        .dash-card.highlight .dash-value { color: #FACC15; font-size: 2.1rem; }
+        #timer { font-size: 1.4rem; color: #E2E8F0; }
+
+        .control-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+        button.control-btn { padding: 9px 14px; font-size: 0.95rem; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.2s; }
+        #btn-start { background-color: #16A34A; color: white; font-size: 1.05rem; padding: 9px 20px; }
+        #btn-pause { background-color: #D97706; color: white; display: none; }
+        #btn-zero { background-color: #7E22CE; color: white; display: none; }
+        #btn-finish { background-color: #0284C7; color: white; display: none; }
+        #btn-reset { background-color: #DC2626; color: white; }
+        #btn-fullscreen { background-color: #475569; color: white; }
+        #btn-undo { background-color: #78350F; color: white; display: none; }
+        
+        /* 收回模式發光特效 */
+        .undo-active-btn { background-color: #EF4444 !important; box-shadow: 0 0 12px #EF4444; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+        /* 狀態與語音進度提示列 */
+        #status-banner { font-size: 1rem; color: #FDE047; margin-top: 8px; font-weight: bold; min-height: 1.3rem; letter-spacing: 0.5px; }
+
+        /* 中間：相機畫面 */
+        #camera-section { height: 160px; background-color: #000; position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #viewfinder { width: 100%; height: 100%; object-fit: cover; }
+        #recording-indicator { position: absolute; top: 10px; right: 10px; color: #EF4444; font-weight: bold; display: none; background: rgba(255,255,255,0.9); padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; }
+        
+        /* 狀態統計列 */
+        #summary-bar { display: flex; justify-content: space-around; background: #E2E8F0; padding: 6px 10px; font-size: 0.88rem; font-weight: bold; color: #334155; border-bottom: 1px solid #CBD5E1; flex-shrink: 0; }
+        .stat-normal { color: #0284C7; }
+        .stat-warn { color: #DC2626; }
+        .stat-done { color: #475569; }
+
+        /* 下載區 */
+        #download-section { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.92); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; gap: 18px; padding: 20px; box-sizing: border-box; text-align: center; }
+        .download-btn { padding: 15px 30px; text-decoration: none; border-radius: 8px; font-size: 1.15rem; font-weight: bold; color: white; border: none; cursor: pointer; text-align: center; width: 90%; max-width: 400px; box-sizing: border-box; }
+        #btn-dl-excel { background-color: #16A34A; }
+        #btn-dl-video { background-color: #E11D48; }
+        #btn-close-dl { background-color: #475569; font-size: 1rem; padding: 10px 20px; }
+
+        /* 下半部：學生按鈕網格 */
+        #student-section { padding: 12px; overflow-y: auto; flex-grow: 1; transition: background-color 0.3s; }
+        #student-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 10px; }
+        
+        /* 學生按鍵狀態樣式 */
+        .student-btn { padding: 14px 6px; font-size: 1.05rem; font-weight: bold; border: none; border-radius: 10px; cursor: pointer; background-color: #0284C7; color: white; transition: all 0.2s; box-shadow: 0 3px 5px rgba(0,0,0,0.15); display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        .student-btn:active { transform: scale(0.96); }
+        .student-lane { position: absolute; top: 4px; left: 6px; font-size: 0.7rem; background: rgba(0,0,0,0.25); padding: 1px 5px; border-radius: 4px; }
+        .student-name { margin-top: 6px; font-size: 1.1rem; }
+        .student-status { display: block; font-size: 0.8rem; margin-top: 5px; font-weight: normal; background: rgba(0,0,0,0.15); padding: 2px 6px; border-radius: 4px; width: 90%; }
+        
+        /* 失敗 1 次：變紅色並顯示失敗1次 */
+        .student-btn.fail-once { background-color: #DC2626; box-shadow: 0 0 0 3px #FCA5A5; }
+        .student-btn.fail-once .student-status { background: #991B1B; color: #FEF2F2; font-weight: bold; }
+        
+        /* 失敗 2 次：測驗結束並呈現測驗結果趟數 */
+        .student-btn.finished { background-color: #64748B; color: #F1F5F9; box-shadow: none; }
+        .student-btn.finished .student-status { background: #334155; color: #FDE047; font-weight: bold; font-size: 0.85rem; }
+
+        /* 收回模式視覺提示 */
+        body.undo-mode #student-section { background-color: #FEE2E2; border-top: 4px dashed #EF4444; }
+        body.undo-mode #top-section { background-color: #7F1D1D; }
+        body.undo-mode .student-btn.finished { cursor: pointer; opacity: 0.9; border: 2px dashed #FACC15; }
+    </style>
+</head>
+<body>
+
+    <!-- ===== 1. 設定畫面 ===== -->
+    <div id="setup-section">
+        <div class="header-title">
+            <h2>🏃‍♂️ Lap-time Pacer</h2>
+            <span class="badge-version">漸速耐力折返跑版 (20m)</span>
+        </div>
+        
+        <div class="setup-group">
+            <label>1. 班級與組別設定</label>
+            <input type="text" id="input-test-name" placeholder="輸入班級 / 組別名稱 (例如: 8年3班_第1組)">
+            <div class="rule-box">
+                <strong>📋 運動部標準檢測規則：</strong><br>
+                • 受測者須在提示音響起前，至少<strong>單腳觸線</strong>，並於指示音響後雙腳於端線後折返。<br>
+                • <strong>第 1 次失敗</strong>（未及時觸線或搶跑）：點擊學生按鍵，按鍵轉<strong>紅色</strong>並警告。<br>
+                • <strong>第 2 次失敗</strong>：再次點擊該生按鍵，測驗即<strong>結束</strong>並鎖定最終完成趟數。
+            </div>
+        </div>
+
+        <div class="setup-group">
+            <label>2. 檢測音訊來源設定</label>
+            <select id="sel-audio-mode" onchange="toggleAudioUpload()">
+                <option value="builtin" selected>🔊 使用系統內建【運動部標準 20m 漸速折返跑】語音與節奏音</option>
+                <option value="custom">📂 載入本機官方 MP3 / WAV 檢測音訊檔 (搭配系統同步計趟)</option>
+            </select>
+            <div id="custom-audio-box" style="display:none; margin-top: 10px;">
+                <span style="font-size: 0.85rem; color: #555;">請選擇漸速耐力折返跑官方音訊檔 (.mp3, .wav)：</span>
+                <input type="file" id="audio-file-upload" accept="audio/*">
+            </div>
+        </div>
+
+        <div class="setup-group">
+            <label>3. 匯入受測學生名單 (依道次順序)</label>
+            <span style="font-size: 0.82rem; color: #666;">方式 A：選擇 Excel 或 CSV 檔 (自動讀取第一欄作為姓名)</span>
+            <input type="file" id="file-upload" accept=".xlsx, .xls, .csv">
+            <hr style="border: 0.5px solid #e2e8f0; margin: 12px 0;">
+            <span style="font-size: 0.82rem; color: #666;">方式 B：手動輸入名單 (每行一位學生，系統自動分配第 1 道、第 2 道...)</span>
+            <textarea id="manual-names" rows="4" placeholder="王小明&#10;陳大華&#10;林美玲&#10;張志豪"></textarea>
+        </div>
+
+        <div class="setup-group">
+            <label>4. 攝影機錄影存證 (選用)</label>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <select id="sel-camera" style="flex-grow: 1; margin: 0;">
+                    <option value="none">不錄影 (純音訊與計趟紀錄)</option>
+                </select>
+                <button id="btn-preview" type="button" onclick="previewCamera()">預覽鏡頭</button>
+            </div>
+            <video id="preview-video" autoplay playsinline muted style="display:none; width:100%; height:160px; object-fit:cover; margin-top:10px; background:#000; border-radius:8px;"></video>
+        </div>
+
+        <button id="btn-confirm-setup" onclick="startSetup()">確認名單與音訊，進入測驗場</button>
+    </div>
+
+    <!-- ===== 2. 測驗畫面 ===== -->
+    <div id="test-section">
+        <div id="top-section">
+            <div class="pacer-dashboard">
+                <div class="dash-card">
+                    <span class="dash-label">目前級別 (Level)</span>
+                    <span class="dash-value" id="disp-level">0</span>
+                </div>
+                <div class="dash-card highlight">
+                    <span class="dash-label">目前進行趟數</span>
+                    <span class="dash-value" id="disp-total-laps">0</span>
+                </div>
+                <div class="dash-card">
+                    <span class="dash-label">已完成有效趟數</span>
+                    <span class="dash-value" id="disp-completed-laps" style="color: #4ADE80;">0</span>
+                </div>
+                <div class="dash-card">
+                    <span class="dash-label">經過時間</span>
+                    <span class="dash-value" id="timer">00:00</span>
+                </div>
+            </div>
+
+            <div class="control-bar">
+                <button id="btn-start" class="control-btn" onclick="startPacerTest()">▶️ 播放音訊並開始測驗</button>
+                <button id="btn-pause" class="control-btn" onclick="pausePacerTest()">⏸️ 暫停</button>
+                <button id="btn-undo" class="control-btn" onclick="toggleUndoMode()">🔙 誤點收回</button>
+                <button id="btn-finish" class="control-btn" onclick="finishTest()">🏁 結束並結算成績</button>
+                <button id="btn-zero" class="control-btn" onclick="zeroTest()">🔄 重新歸零</button>
+                <button id="btn-fullscreen" class="control-btn" onclick="toggleFullScreen()">⛶ 全螢幕</button>
+                <button id="btn-reset" class="control-btn" onclick="resetToSetup()">⚙️ 回到設定</button>
+            </div>
+
+            <div id="status-banner">準備就緒：請受測者站於端線後，點擊「播放音訊並開始測驗」</div>
+        </div>
+
+        <div id="camera-section">
+            <video id="viewfinder" autoplay playsinline muted></video>
+            <div id="recording-indicator">⏺ 錄影存證中</div>
+        </div>
+
+        <div id="summary-bar">
+            <span>總人數：<strong id="count-total">0</strong> 人</span>
+            <span class="stat-normal">正常測驗：<strong id="count-normal">0</strong> 人</span>
+            <span class="stat-warn">失敗 1 次：<strong id="count-warn">0</strong> 人</span>
+            <span class="stat-done">已結束：<strong id="count-done">0</strong> 人</span>
+        </div>
+
+        <div id="student-section">
+            <div id="student-grid"></div>
+        </div>
+
+        <!-- 結算與下載彈窗 -->
+        <div id="download-section">
+            <h2 style="color: white; margin-bottom: 5px;">🎉 漸速耐力折返跑測驗完成</h2>
+            <p style="color: #CBD5E1; margin-top: 0; margin-bottom: 10px;" id="final-summary-text">所有成績已結算完畢，請下載檔案</p>
+            <button id="btn-dl-excel" class="download-btn" onclick="exportExcel()">📊 匯出成績單 (.xlsx)</button>
+            <a id="btn-dl-video" class="download-btn" href="#">🎥 下載錄影存證檔 (.mp4)</a>
+            <button id="btn-close-dl" class="download-btn" onclick="closeDownloadModal()">返回檢視畫面</button>
+        </div>
+    </div>
+
+    <!-- 隱藏的原生音訊播放器（供自訂音訊檔使用） -->
+    <audio id="custom-audio-player"></audio>
+
+    <script>
+        // ==========================================
+        // 標準 20m PACER 漸速耐力折返跑級別與趟數規範表 (Level 1 ~ 21)
+        // 每級固定約 60 秒，速度從 8.5 km/h 起跳，每級增加 0.5 km/h
+        // ==========================================
+        const PACER_LEVELS = [
+            { level: 1,  laps: 7,  speed: 8.5 },
+            { level: 2,  laps: 8,  speed: 9.0 },
+            { level: 3,  laps: 8,  speed: 9.5 },
+            { level: 4,  laps: 9,  speed: 10.0 },
+            { level: 5,  laps: 9,  speed: 10.5 },
+            { level: 6,  laps: 10, speed: 11.0 },
+            { level: 7,  laps: 10, speed: 11.5 },
+            { level: 8,  laps: 11, speed: 12.0 },
+            { level: 9,  laps: 11, speed: 12.5 },
+            { level: 10, laps: 11, speed: 13.0 },
+            { level: 11, laps: 12, speed: 13.5 },
+            { level: 12, laps: 12, speed: 14.0 },
+            { level: 13, laps: 13, speed: 14.5 },
+            { level: 14, laps: 13, speed: 15.0 },
+            { level: 15, laps: 13, speed: 15.5 },
+            { level: 16, laps: 14, speed: 16.0 },
+            { level: 17, laps: 14, speed: 16.5 },
+            { level: 18, laps: 15, speed: 17.0 },
+            { level: 19, laps: 15, speed: 17.5 },
+            { level: 20, laps: 16, speed: 18.0 },
+            { level: 21, laps: 16, speed: 18.5 }
+        ];
+
+        // 預先計算每一趟的精準時間軸 (累積秒數)
+        let SHUTTLE_SCHEDULE = [];
+        function buildShuttleSchedule() {
+            SHUTTLE_SCHEDULE = [];
+            let currentTime = 5.0; // 前 5 秒為「測驗即將開始 5, 4, 3, 2, 1」倒數
+            let cumulativeLap = 0;
+
+            PACER_LEVELS.forEach(lvl => {
+                let lapDuration = 20 / (lvl.speed * 1000 / 3600); // 20公尺所需秒數
+                for (let i = 1; i <= lvl.laps; i++) {
+                    cumulativeLap++;
+                    SHUTTLE_SCHEDULE.push({
+                        totalLap: cumulativeLap,
+                        level: lvl.level,
+                        lapInLevel: i,
+                        startTime: currentTime,
+                        endTime: currentTime + lapDuration,
+                        duration: lapDuration,
+                        isLevelStart: (i === 1)
+                    });
+                    currentTime += lapDuration;
+                }
+            });
+        }
+        buildShuttleSchedule();
+
+        // --- 全局狀態變數 ---
+        let students = [];
+        let importedNames = [];
+        let previewStream = null;
+        let isUndoMode = false;
+
+        // 測驗狀態變數
+        let isRunning = false;
+        let isPaused = false;
+        let audioMode = 'builtin'; // 'builtin' or 'custom'
+        let customAudioUrl = null;
+        let startTimeMs = 0;
+        let pausedElapsedMs = 0;
+        let timerInterval = null;
+
+        // 目前進度追蹤
+        let currentLevel = 0;
+        let currentInProgressLap = 0; // 目前正在跑第幾趟 (1-based)
+        let completedValidLaps = 0;   // 已經完整跑完並響鈴的有效趟數 (0-based)
+        let lastAnnouncedStep = "";   // 避免重複播報
+
+        // Web Audio API 合成器 (用於產生標準三聲響/單聲響提示音)
+        let webAudioCtx = null;
+
+        // --- 網頁載入：初始化相機選項 ---
+        window.addEventListener('load', async () => {
+            const cameraSelect = document.getElementById('sel-camera');
+            try {
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
+                cameraSelect.innerHTML = '<option value="none">不錄影 (純音訊與計趟紀錄)</option>';
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `攝影機 ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+                tempStream.getTracks().forEach(track => track.stop());
+            } catch (err) {
+                cameraSelect.innerHTML = '<option value="none">不錄影 (或無相機權限)</option>';
+            }
+        });
+
+        // --- 設定頁面交互 ---
+        function toggleAudioUpload() {
+            const mode = document.getElementById('sel-audio-mode').value;
+            document.getElementById('custom-audio-box').style.display = (mode === 'custom') ? 'block' : 'none';
+        }
+
+        document.getElementById('audio-file-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                if (customAudioUrl) URL.revokeObjectURL(customAudioUrl);
+                customAudioUrl = URL.createObjectURL(file);
+            }
+        });
+
+        async function previewCamera() {
+            const sel = document.getElementById('sel-camera').value;
+            const video = document.getElementById('preview-video');
+            if (previewStream) {
+                previewStream.getTracks().forEach(t => t.stop());
+                previewStream = null;
+            }
+            if (sel === 'none') {
+                video.style.display = 'none';
+                return;
+            }
+            video.style.display = 'block';
+            try {
+                previewStream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: sel } } });
+                video.srcObject = previewStream;
+            } catch(e) {
+                alert('預覽失敗，請確認相機未被其他程式佔用。');
+                video.style.display = 'none';
+            }
+        }
+
+        document.getElementById('file-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+                importedNames = jsonData.map(row => row[0]).filter(name => name !== undefined && String(name).trim() !== "");
+                alert(`成功載入 ${importedNames.length} 位受測學生名單！`);
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function startSetup() {
+            audioMode = document.getElementById('sel-audio-mode').value;
+            if (audioMode === 'custom' && !customAudioUrl) {
+                alert('您選擇了自訂音訊檔模式，請先選擇 MP3 或 WAV 音訊檔案！');
+                return;
+            }
+
+            let finalNames = [];
+            if (importedNames.length > 0) {
+                finalNames = importedNames;
+            } else {
+                const manual = document.getElementById('manual-names').value.trim();
+                if (manual) {
+                    finalNames = manual.split('\n').map(n => n.trim()).filter(n => n !== "");
+                } else {
+                    alert('請匯入檔案或手動輸入受測學生名單！');
+                    return;
+                }
+            }
+
+            students = finalNames.map((name, index) => ({
+                id: index,
+                lane: index + 1,
+                name: name,
+                failCount: 0,           // 0: 正常, 1: 失敗1次(紅燈), 2: 失敗2次(測驗結束)
+                isFinished: false,
+                finalTotalLaps: 0,      // 最終完成的有效總趟數
+                finalLevel: 0,
+                finalLapInLevel: 0,
+                fail1Record: "-",       // 第1次失敗時發生的級別與趟數
+                fail2Record: "-"        // 第2次失敗時發生的級別與趟數
+            }));
+
+            if (previewStream) {
+                previewStream.getTracks().forEach(t => t.stop());
+                previewStream = null;
+            }
+
+            document.getElementById('setup-section').style.display = 'none';
+            document.getElementById('test-section').style.display = 'flex';
+            
+            resetVariables();
+            renderGrid();
+            updateSummaryStats();
+            initCamera();
+
+            if (audioMode === 'custom') {
+                const player = document.getElementById('custom-audio-player');
+                player.src = customAudioUrl;
+            }
+        }
+
+        function resetVariables() {
+            isRunning = false;
+            isPaused = false;
+            pausedElapsedMs = 0;
+            currentLevel = 0;
+            currentInProgressLap = 0;
+            completedValidLaps = 0;
+            lastAnnouncedStep = "";
+            document.getElementById('disp-level').innerText = "0";
+            document.getElementById('disp-total-laps').innerText = "0";
+            document.getElementById('disp-completed-laps').innerText = "0";
+            document.getElementById('timer').innerText = "00:00";
+        }
+
+        // ==========================================
+        // 語音與提示音合成引擎 (模擬運動部官方檢測音訊)
+        // ==========================================
+        function playBeep(freq = 880, duration = 0.25, type = 'sine') {
+            try {
+                if (!webAudioCtx) webAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (webAudioCtx.state === 'suspended') webAudioCtx.resume();
+                const osc = webAudioCtx.createOscillator();
+                const gain = webAudioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, webAudioCtx.currentTime);
+                gain.gain.setValueAtTime(0.5, webAudioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, webAudioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(webAudioCtx.destination);
+                osc.start();
+                osc.stop(webAudioCtx.currentTime + duration);
+            } catch (e) { console.error(e); }
+        }
+
+        function playLevelUpChime() {
+            // 升級時的三連音提示
+            playBeep(660, 0.12);
+            setTimeout(() => playBeep(880, 0.12), 130);
+            setTimeout(() => playBeep(1100, 0.25), 260);
+        }
+
+        function speakText(text) {
+            if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel(); // 取消前一句避免堆積延遲
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'zh-TW';
+            utter.rate = 1.15; // 語速稍快以配合高強度節奏
+            window.speechSynthesis.speak(utter);
+        }
+
+        // ==========================================
+        // 測驗主計時與音訊同步迴圈
+        // ==========================================
+        function startPacerTest() {
+            if (isRunning && !isPaused) return;
+
+            if (!webAudioCtx) webAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (webAudioCtx.state === 'suspended') webAudioCtx.resume();
+
+            if (audioMode === 'custom') {
+                const player = document.getElementById('custom-audio-player');
+                player.play().catch(e => alert("無法播放音訊檔，請確認檔案格式。"));
+            }
+
+            startTimeMs = Date.now() - pausedElapsedMs;
+            isRunning = true;
+            isPaused = false;
+
+            document.getElementById('btn-start').style.display = 'none';
+            document.getElementById('btn-pause').style.display = 'inline-block';
+            document.getElementById('btn-pause').innerText = '⏸️ 暫停';
+            document.getElementById('btn-undo').style.display = 'inline-block';
+            document.getElementById('btn-finish').style.display = 'inline-block';
+            document.getElementById('btn-zero').style.display = 'inline-block';
+
+            if (mediaRecorder && mediaRecorder.state === 'inactive') {
+                mediaRecorder.start(1000);
+                document.getElementById('recording-indicator').style.display = 'block';
+            } else if (mediaRecorder && mediaRecorder.state === 'paused') {
+                mediaRecorder.resume();
+                document.getElementById('recording-indicator').style.display = 'block';
+            }
+
+            timerInterval = setInterval(updatePacerLoop, 50);
+        }
+
+        function pausePacerTest() {
+            if (!isRunning) return;
+            isRunning = false;
+            isPaused = true;
+            clearInterval(timerInterval);
+            pausedElapsedMs = Date.now() - startTimeMs;
+
+            if (audioMode === 'custom') {
+                document.getElementById('custom-audio-player').pause();
+            } else if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+
+            if (isUndoMode) toggleUndoMode();
+
+            document.getElementById('btn-pause').style.display = 'none';
+            document.getElementById('btn-start').style.display = 'inline-block';
+            document.getElementById('btn-start').innerText = '▶️ 繼續測驗';
+            document.getElementById('status-banner').innerText = '⏸️ 測驗已暫停';
+
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.pause();
+                document.getElementById('recording-indicator').style.display = 'none';
+            }
+        }
+
+        function updatePacerLoop() {
+            if (!isRunning) return;
+
+            let elapsedSec = 0;
+            if (audioMode === 'custom') {
+                const player = document.getElementById('custom-audio-player');
+                elapsedSec = player.currentTime;
+            } else {
+                elapsedSec = (Date.now() - startTimeMs) / 1000;
+            }
+
+            // 更新經過時間顯示
+            let mins = Math.floor(elapsedSec / 60);
+            let secs = Math.floor(elapsedSec % 60);
+            document.getElementById('timer').innerText = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+
+            // 1. 起跑前 5 秒倒數階段 (0.0s ~ 5.0s)
+            if (elapsedSec < 5.0) {
+                let countdown = Math.ceil(5.0 - elapsedSec);
+                let stepKey = `prep-${countdown}`;
+                if (lastAnnouncedStep !== stepKey) {
+                    lastAnnouncedStep = stepKey;
+                    document.getElementById('status-banner').innerText = `📢 測驗即將開始... 倒數 ${countdown} 秒`;
+                    if (audioMode === 'builtin') {
+                        if (countdown === 5) speakText("測驗即將開始，5，4，3，2，1");
+                        if (countdown <= 3) playBeep(520, 0.12);
+                    }
+                }
+                return;
+            }
+
+            // 2. 尋找目前時間對應的趟次
+            let activeShuttle = SHUTTLE_SCHEDULE.find(s => elapsedSec >= s.startTime && elapsedSec < s.endTime);
+
+            if (!activeShuttle) {
+                // 全部 21 級完成
+                document.getElementById('status-banner').innerText = "🏆 已完成全部 21 級 (247 趟) 最高紀錄！";
+                finishTest(true);
+                return;
+            }
+
+            currentLevel = activeShuttle.level;
+            currentInProgressLap = activeShuttle.totalLap;
+            completedValidLaps = activeShuttle.totalLap - 1; // 正在跑第 N 趟，代表已完整結束 N-1 趟
+
+            document.getElementById('disp-level').innerText = currentLevel;
+            document.getElementById('disp-total-laps').innerText = currentInProgressLap;
+            document.getElementById('disp-completed-laps').innerText = completedValidLaps;
+
+            // 3. 趟次開始瞬間觸發 (響鈴 + 語音播報)
+            let startStepKey = `start-${activeShuttle.totalLap}`;
+            if (lastAnnouncedStep !== startStepKey) {
+                lastAnnouncedStep = startStepKey;
+                let bannerMsg = `🏃 第 ${activeShuttle.level} 級 - 第 ${activeShuttle.lapInLevel} 趟 (總計第 ${activeShuttle.totalLap} 趟)`;
+                document.getElementById('status-banner').innerText = bannerMsg;
+
+                if (audioMode === 'builtin') {
+                    if (activeShuttle.isLevelStart) {
+                        playLevelUpChime();
+                        speakText(`第${activeShuttle.level}級開始，第${activeShuttle.lapInLevel}趟`);
+                    } else {
+                        playBeep(880, 0.25);
+                        speakText(`第${activeShuttle.level}級，第${activeShuttle.lapInLevel}趟`);
+                    }
+                }
+            }
+
+            // 4. 趟次結束前 3 秒節奏提示音 (對應影片中的 3, 2, 1 節奏提示)
+            let remainingInLap = activeShuttle.endTime - elapsedSec;
+            if (remainingInLap <= 2.4 && remainingInLap > 0.2) {
+                let beat = Math.ceil(remainingInLap / 0.8); // 約每 0.8 秒一拍 (3, 2, 1)
+                let beatKey = `beat-${activeShuttle.totalLap}-${beat}`;
+                if (lastAnnouncedStep !== beatKey && beat >= 1 && beat <= 3) {
+                    lastAnnouncedStep = beatKey;
+                    if (audioMode === 'builtin') {
+                        playBeep(600, 0.08);
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 學生按鈕渲染與【失敗 1 次 / 失敗 2 次】判定邏輯
+        // ==========================================
+        function renderGrid() {
+            const grid = document.getElementById('student-grid');
+            grid.innerHTML = '';
+
+            students.forEach((student, index) => {
+                let btn = document.createElement('button');
+                btn.id = `student-btn-${index}`;
+                btn.className = 'student-btn';
+
+                let statusHtml = '正常跑動中';
+                if (student.failCount === 1) {
+                    btn.classList.add('fail-once');
+                    statusHtml = `⚠️ 失敗 1 次<br><small>(${student.fail1Record})</small>`;
+                } else if (student.isFinished) {
+                    btn.classList.add('finished');
+                    statusHtml = `🏁 結束：${student.finalTotalLaps} 趟<br><small>(第${student.finalLevel}級-${student.finalLapInLevel}趟)</small>`;
+                }
+
+                btn.innerHTML = `
+                    <span class="student-lane">第 ${student.lane} 道</span>
+                    <div class="student-name">${student.name}</div>
+                    <span class="student-status">${statusHtml}</span>
+                `;
+
+                btn.onclick = () => handleStudentClick(index);
+                grid.appendChild(btn);
+            });
+        }
+
+        function handleStudentClick(index) {
+            if (!isRunning && !isPaused && completedValidLaps === 0 && currentInProgressLap === 0) {
+                alert("請先點擊「播放音訊並開始測驗」！");
+                return;
+            }
+
+            let student = students[index];
+
+            // --- A. 誤點收回模式 ---
+            if (isUndoMode) {
+                if (student.failCount === 0) {
+                    alert(`${student.name} 目前沒有失敗紀錄可收回！`);
+                    toggleUndoMode();
+                    return;
+                }
+
+                if (student.isFinished) {
+                    // 從「失敗2次(結束)」退回「失敗1次(紅色警告)」
+                    student.isFinished = false;
+                    student.failCount = 1;
+                    student.fail2Record = "-";
+                    student.finalTotalLaps = 0;
+                    student.finalLevel = 0;
+                    student.finalLapInLevel = 0;
+                } else if (student.failCount === 1) {
+                    // 從「失敗1次(紅色警告)」退回「正常測驗」
+                    student.failCount = 0;
+                    student.fail1Record = "-";
+                }
+
+                renderGrid();
+                updateSummaryStats();
+                toggleUndoMode(); // 收回完成後自動退出收回模式
+                return;
+            }
+
+            // --- B. 正常判定模式 ---
+            if (student.isFinished) return; // 已結束測驗者不重複觸發
+
+            // 取得當下發生的級別與趟數資訊
+            let eventLevel = currentLevel || 1;
+            let eventTotalLap = currentInProgressLap || 1;
+            let currentShuttleObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === eventTotalLap);
+            let eventLapInLevel = currentShuttleObj ? currentShuttleObj.lapInLevel : 1;
+            let recordLabel = `第${eventLevel}級-第${eventLapInLevel}趟`;
+
+            if (student.failCount === 0) {
+                // 【第 1 次失敗】：姓名鍵變紅色，並顯示失敗 1 次
+                student.failCount = 1;
+                student.fail1Record = `${recordLabel} (總第${eventTotalLap}趟)`;
+            } else if (student.failCount === 1) {
+                // 【第 2 次失敗】：該生測驗結束，並呈現測驗結果趟數
+                // 依運動部規範：累計第2次失敗即結束，成績為「已完整完成的有效趟數」
+                let validResultLaps = Math.max(0, completedValidLaps);
+                
+                // 換算有效總趟數對應的級別與級內趟數
+                let validLevel = 0;
+                let validLapInLevel = 0;
+                if (validResultLaps > 0) {
+                    let validObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === validResultLaps);
+                    if (validObj) {
+                        validLevel = validObj.level;
+                        validLapInLevel = validObj.lapInLevel;
+                    }
+                }
+
+                student.failCount = 2;
+                student.isFinished = true;
+                student.finalTotalLaps = validResultLaps;
+                student.finalLevel = validLevel;
+                student.finalLapInLevel = validLapInLevel;
+                student.fail2Record = `${recordLabel} (總第${eventTotalLap}趟)`;
+            }
+
+            renderGrid();
+            updateSummaryStats();
+
+            // 檢查是否全班皆已結束測驗
+            let allDone = students.every(s => s.isFinished);
+            if (allDone) {
+                setTimeout(() => {
+                    if (confirm("🎉 所有受測學生皆已完成測驗！是否立即結束音訊並結算成績？")) {
+                        finishTest(true);
+                    }
+                }, 300);
+            }
+        }
+
+        function updateSummaryStats() {
+            let total = students.length;
+            let done = students.filter(s => s.isFinished).length;
+            let warn = students.filter(s => s.failCount === 1 && !s.isFinished).length;
+            let normal = total - done - warn;
+
+            document.getElementById('count-total').innerText = total;
+            document.getElementById('count-normal').innerText = normal;
+            document.getElementById('count-warn').innerText = warn;
+            document.getElementById('count-done').innerText = done;
+        }
+
+        function toggleUndoMode() {
+            isUndoMode = !isUndoMode;
+            const btnUndo = document.getElementById('btn-undo');
+            if (isUndoMode) {
+                btnUndo.innerText = "⚠️ 請點擊要收回的學生";
+                btnUndo.classList.add('undo-active-btn');
+                document.body.classList.add('undo-mode');
+            } else {
+                btnUndo.innerText = "🔙 誤點收回";
+                btnUndo.classList.remove('undo-active-btn');
+                document.body.classList.remove('undo-mode');
+            }
+        }
+
+        // ==========================================
+        // 測驗結束、歸零與 Excel 匯出
+        // ==========================================
+        function finishTest(autoTrigger = false) {
+            if (!autoTrigger && !confirm("確定要結束測驗並進行結算嗎？\n(尚未失敗2次的學生，將以目前已完成的有效趟數作為最終成績)")) {
+                return;
+            }
+
+            isRunning = false;
+            isPaused = false;
+            clearInterval(timerInterval);
+            if (isUndoMode) toggleUndoMode();
+
+            if (audioMode === 'custom') {
+                document.getElementById('custom-audio-player').pause();
+            } else if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+
+            // 將尚未結束的學生，自動結算為目前已完成的有效趟數
+            let validResultLaps = Math.max(0, completedValidLaps);
+            let validLevel = 0;
+            let validLapInLevel = 0;
+            if (validResultLaps > 0) {
+                let validObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === validResultLaps);
+                if (validObj) {
+                    validLevel = validObj.level;
+                    validLapInLevel = validObj.lapInLevel;
+                }
+            }
+
+            students.forEach(s => {
+                if (!s.isFinished) {
+                    s.isFinished = true;
+                    s.finalTotalLaps = validResultLaps;
+                    s.finalLevel = validLevel;
+                    s.finalLapInLevel = validLapInLevel;
+                }
+            });
+
+            renderGrid();
+            updateSummaryStats();
+            document.getElementById('status-banner').innerText = "🏁 測驗已結束，成績結算完成";
+
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                document.getElementById('recording-indicator').style.display = 'none';
+            } else {
+                document.getElementById('download-section').style.display = 'flex';
+                document.getElementById('btn-dl-video').style.display = 'none';
+            }
+
+            document.getElementById('btn-start').style.display = 'none';
+            document.getElementById('btn-pause').style.display = 'none';
+            document.getElementById('btn-undo').style.display = 'none';
+            document.getElementById('btn-finish').style.display = 'none';
+        }
+
+        function closeDownloadModal() {
+            document.getElementById('download-section').style.display = 'none';
+        }
+
+        function exportExcel() {
+            let exportData = students.map(s => ({
+                "道次": s.lane,
+                "學生姓名": s.name,
+                "測驗結果(總趟數)": s.finalTotalLaps,
+                "完成級別-趟數": s.finalTotalLaps > 0 ? `第 ${s.finalLevel} 級 - 第 ${s.finalLapInLevel} 趟` : "0 趟",
+                "第1次失敗紀錄": s.fail1Record,
+                "第2次失敗紀錄(結束)": s.fail2Record,
+                "結束原因": s.failCount >= 2 ? "累計失敗2次結束" : "測驗終止結算"
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            // 設定欄寬讓報表更美觀
+            worksheet['!cols'] = [
+                { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 24 }, { wch: 24 }, { wch: 18 }
+            ];
+
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "漸速耐力折返跑成績");
+
+            let customName = document.getElementById('input-test-name').value.trim();
+            let dateStr = new Date().toLocaleDateString('zh-TW').replace(/\//g, '');
+            let fileName = customName ? `${customName}_漸速耐力折返跑成績_${dateStr}` : `漸速耐力折返跑成績_${dateStr}`;
+            
+            XLSX.writeFile(workbook, `${fileName}.xlsx`);
+        }
+
+        function zeroTest() {
+            if (!confirm("【警告】確定要將時間與音訊歸零，並清除所有學生的失敗紀錄嗎？")) return;
+
+            isRunning = false;
+            isPaused = false;
+            clearInterval(timerInterval);
+            if (isUndoMode) toggleUndoMode();
+
+            if (audioMode === 'custom') {
+                const player = document.getElementById('custom-audio-player');
+                player.pause();
+                player.currentTime = 0;
+            } else if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+
+            resetVariables();
+            students.forEach(s => {
+                s.failCount = 0;
+                s.isFinished = false;
+                s.finalTotalLaps = 0;
+                s.finalLevel = 0;
+                s.finalLapInLevel = 0;
+                s.fail1Record = "-";
+                s.fail2Record = "-";
+            });
+
+            renderGrid();
+            updateSummaryStats();
+
+            document.getElementById('btn-start').style.display = 'inline-block';
+            document.getElementById('btn-start').innerText = '▶️ 播放音訊並開始測驗';
+            document.getElementById('btn-pause').style.display = 'none';
+            document.getElementById('btn-undo').style.display = 'none';
+            document.getElementById('btn-finish').style.display = 'none';
+            document.getElementById('btn-zero').style.display = 'none';
+            document.getElementById('status-banner').innerText = "已重新歸零，準備就緒";
+        }
+
+        function resetToSetup() {
+            if (!confirm("確定要返回設定畫面嗎？當前的測驗紀錄將會清除。")) return;
+
+            isRunning = false;
+            isPaused = false;
+            clearInterval(timerInterval);
+            if (isUndoMode) toggleUndoMode();
+
+            if (audioMode === 'custom') {
+                const player = document.getElementById('custom-audio-player');
+                player.pause();
+                player.currentTime = 0;
+            } else if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.onstop = null;
+                mediaRecorder.stop();
+                recordedChunks = [];
+                const stream = viewfinder.srcObject;
+                if (stream) stream.getTracks().forEach(track => track.stop());
+            }
+
+            document.getElementById('download-section').style.display = 'none';
+            document.getElementById('test-section').style.display = 'none';
+            document.getElementById('setup-section').style.display = 'flex';
+            
+            document.getElementById('btn-start').style.display = 'inline-block';
+            document.getElementById('btn-start').innerText = '▶️ 播放音訊並開始測驗';
+            document.getElementById('btn-pause').style.display = 'none';
+            document.getElementById('btn-undo').style.display = 'none';
+            document.getElementById('btn-finish').style.display = 'none';
+            document.getElementById('btn-zero').style.display = 'none';
+        }
+
+        // --- 相機錄影模組 ---
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        const viewfinder = document.getElementById('viewfinder');
+
+        async function initCamera() {
+            const selectedDeviceId = document.getElementById('sel-camera').value;
+            if (selectedDeviceId === 'none') {
+                document.getElementById('camera-section').style.display = 'none';
+                return;
+            }
+            document.getElementById('camera-section').style.display = 'flex';
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { deviceId: { exact: selectedDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }, 
+                    audio: true 
+                });
+                viewfinder.srcObject = stream;
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    if (recordedChunks.length === 0) return;
+                    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/mp4' });
+                    const url = URL.createObjectURL(blob);
+                    const btnDlVideo = document.getElementById('btn-dl-video');
+                    btnDlVideo.href = url;
+                    btnDlVideo.style.display = 'block';
+                    const ext = (mediaRecorder.mimeType && mediaRecorder.mimeType.includes('webm')) ? 'webm' : 'mp4';
+                    let customName = document.getElementById('input-test-name').value.trim();
+                    btnDlVideo.download = `${customName || '漸速耐力折返跑'}_錄影存證.${ext}`;
+                    document.getElementById('download-section').style.display = 'flex';
+                    recordedChunks = [];
+                };
+            } catch (err) {
+                alert("無法存取相機，將以純計趟模式進行。");
+                document.getElementById('camera-section').style.display = 'none';
+            }
+        }
+
+        function toggleFullScreen() {
+            const doc = window.document;
+            const docEl = doc.documentElement;
+            if (!doc.fullscreenElement) {
+                (docEl.requestFullscreen || docEl.webkitRequestFullScreen).call(docEl);
+                document.getElementById('btn-fullscreen').innerText = "退出全螢幕";
+            } else {
+                (doc.exitFullscreen || doc.webkitExitFullscreen).call(doc);
+                document.getElementById('btn-fullscreen').innerText = "⛶ 全螢幕";
+            }
+        }
+    </script>
+</body>
+</html>

@@ -18,7 +18,6 @@
         .setup-group label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
         select, input[type="file"], input[type="number"], input[type="text"], textarea { width: 100%; padding: 10px; margin-top: 5px; font-size: 1rem; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; background: white; }
         
-        .rule-box { background: #FFF8E1; border-left: 4px solid #FFC107; padding: 10px 12px; font-size: 0.88rem; color: #5D4037; line-height: 1.6; border-radius: 4px; margin-top: 8px; }
         .audio-status-tag { display: inline-block; margin-top: 6px; font-size: 0.85rem; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
         .audio-ok { background: #DCFCE7; color: #166534; }
         .audio-warn { background: #FEF3C7; color: #92400E; }
@@ -49,15 +48,13 @@
         #btn-reset { background-color: #DC2626; color: white; }
         #btn-fullscreen { background-color: #475569; color: white; }
         #btn-undo { background-color: #78350F; color: white; display: none; }
-        .sync-btn { background-color: #334155; color: #E2E8F0; font-size: 0.8rem !important; padding: 6px 9px !important; }
         
         /* 收回模式發光特效 */
         .undo-active-btn { background-color: #EF4444 !important; box-shadow: 0 0 12px #EF4444; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
 
-        /* 狀態與語音進度提示列 (紅框對應位置) */
-        #status-banner { font-size: 1.05rem; color: #FDE047; margin-top: 8px; font-weight: bold; min-height: 1.4rem; letter-spacing: 0.5px; padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.06); transition: background-color 0.15s; }
-        #status-banner.beep-flash { background-color: rgba(250, 204, 21, 0.32); color: #FFFFFF; }
+        /* 狀態與進度提示列 */
+        #status-banner { font-size: 1.05rem; color: #FDE047; margin-top: 8px; font-weight: bold; min-height: 1.4rem; letter-spacing: 0.5px; padding: 5px 8px; border-radius: 6px; background: rgba(255,255,255,0.06); }
 
         /* 中間：相機畫面 */
         #camera-section { height: 150px; background-color: #000; position: relative; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -114,14 +111,6 @@
         <div class="setup-group">
             <label>1. 班級與組別設定</label>
             <input type="text" id="input-test-name" placeholder="輸入班級 / 組別名稱 (例如: 8年3班_第1組)">
-            <div class="rule-box">
-                <strong>📋 音訊響鈴（BEEP）與計趟判定規則：</strong><br>
-                • 「測驗即將開始 5、4、3、2、1 <strong>BEEP</strong>」響起 $\rightarrow$ <strong>開始第 1 級 第 1 趟</strong>（已完成 0 趟）。<br>
-                • 「第 x 級，第 y 趟，3、2、1」期間 $\rightarrow$ <strong>正在進行第 y 趟</strong>；該趟 <strong>BEEP</strong> 響起才結束第 y 趟並進入第 y+1 趟。<br>
-                • <strong>第 2 次失敗（於第 y 趟失敗）</strong>：<br>
-                 - 非連續失敗 $\rightarrow$ 完成成績為 <strong>y - 1 趟</strong>。<br>
-                 - 連續兩趟失敗（第 y-1 趟與第 y 趟皆失敗） $\rightarrow$ 完成成績為 <strong>y - 2 趟</strong>。
-            </div>
         </div>
 
         <div class="setup-group">
@@ -192,12 +181,6 @@
                 <button id="btn-reset" class="control-btn" onclick="resetToSetup()">⚙️ 回到設定</button>
             </div>
 
-            <div style="margin-top: 6px; display: flex; justify-content: center; align-items: center; gap: 6px;">
-                <button type="button" class="control-btn sync-btn" onclick="adjustSyncOffset(-0.2)">⏪ BEEP 提前 0.2s</button>
-                <span id="sync-offset-label" style="font-size: 0.78rem; color: #94A3B8;">音訊自動偵測鎖定中 (微調: 0.0s)</span>
-                <button type="button" class="control-btn sync-btn" onclick="adjustSyncOffset(0.2)">⏩ BEEP 延後 0.2s</button>
-            </div>
-
             <div id="status-banner">準備就緒：請受測者站於端線後，點擊「播放官方音訊並開始測驗」</div>
         </div>
 
@@ -227,13 +210,16 @@
         </div>
     </div>
 
-    <!-- 官方音訊播放器 (預設指向同目錄下的 pacer.mp3) -->
+    <!-- 標準化官方音訊播放器 (直接播放 pacer.mp3) -->
     <audio id="pacer-audio-player" preload="auto"></audio>
 
     <script>
         // ==========================================
-        // 標準 20m PACER 漸速耐力折返跑級別與趟數規範表 (Level 1 ~ 21, 總計 247 趟)
-        // 247 趟標準總跑動時間 = 1317.43 秒，官方音檔總長 1332.30 秒 -> 起跑 BEEP_0 位於 11.50 秒
+        // 標準化 20m PACER 漸速耐力折返跑規範表 (Level 1 ~ 21，共 247 趟)
+        // • 起跑前導「測驗即將開始 5 4 3 2 1 beep」：0.0s ~ 11.5s
+        // • 起跑 beep 響起 (11.5s) -> 進入第 1 級 第 1 趟
+        // • 每趟標準秒數 = 20 / (speed / 3.6)
+        // • 當「第 x 級 第 y 趟 3 2 1」播報時，仍處於第 y 趟進行區間；直到該趟 beep 響起才切換至第 y+1 趟
         // ==========================================
         const PACER_LEVELS = [
             { level: 1,  laps: 7,  speed: 8.5 },
@@ -259,16 +245,12 @@
             { level: 21, laps: 16, speed: 18.5 }
         ];
 
-        let baseStartBeepTime = 11.50; // 起跑 BEEP_0 基準時間 (會由即時純音偵測器自動校準)
-        let manualSyncOffset = 0.0;    // 使用者手動微調秒數
+        const START_BEEP_TIME = 11.50; // 起跑「測驗即將開始 5 4 3 2 1 beep」響鈴時刻
 
-        // 建立每一趟的精準時間軸：
-        // • startBeepTime (BEEP_{y-1})：第 y 趟起跑響鈴時刻（紅框於此刻切換為「第 x 級 - 第 y 趟」）
-        // • endBeepTime   (BEEP_y)    ：第 y 趟結束響鈴時刻（在此刻前單腳觸線即完成第 y 趟）
         let SHUTTLE_SCHEDULE = [];
         function buildShuttleSchedule() {
             SHUTTLE_SCHEDULE = [];
-            let currentTime = baseStartBeepTime + manualSyncOffset;
+            let currentTime = START_BEEP_TIME;
             let cumulativeLap = 0;
 
             PACER_LEVELS.forEach(lvl => {
@@ -279,8 +261,8 @@
                         totalLap: cumulativeLap,
                         level: lvl.level,
                         lapInLevel: i,
-                        startBeepTime: currentTime,
-                        endBeepTime: currentTime + lapDuration,
+                        startBeepTime: currentTime,            // 第 y 趟起跑 beep 時刻
+                        endBeepTime: currentTime + lapDuration, // 第 y 趟結束 beep 時刻（之後才進入第 y+1 趟）
                         duration: lapDuration
                     });
                     currentTime += lapDuration;
@@ -289,116 +271,13 @@
         }
         buildShuttleSchedule();
 
-        // ==========================================
-        // Web Audio API 即時純音 BEEP 偵測器 (自動對齊音檔中的每一聲 beep)
-        // ==========================================
-        let audioCtx = null;
-        let analyser = null;
-        let freqData = null;
-        let autoCalibratedStart = false;
-        let lastDetectedBeepAudioTime = -10;
-
-        function initBeepDetector() {
-            if (audioCtx) return;
-            try {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContextClass();
-                const player = document.getElementById('pacer-audio-player');
-                const source = audioCtx.createMediaElementSource(player);
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 2048;
-                analyser.smoothingTimeConstant = 0.2;
-                source.connect(analyser);
-                analyser.connect(audioCtx.destination);
-                freqData = new Uint8Array(analyser.frequencyBinCount);
-            } catch (e) {
-                console.warn("Web Audio API detector fallback:", e);
-            }
-        }
-
-        function detectLiveBeep(elapsedSec) {
-            if (!analyser || !freqData || !audioCtx) return;
-            analyser.getByteFrequencyData(freqData);
-
-            // 檢查 650Hz ~ 1600Hz 範圍內的純音能量峰值 (官方提示音 beep 落在此頻段)
-            const binHz = audioCtx.sampleRate / analyser.fftSize;
-            const minBin = Math.floor(650 / binHz);
-            const maxBin = Math.ceil(1600 / binHz);
-
-            let peakVal = 0;
-            let sumVal = 0;
-            let count = 0;
-            for (let i = minBin; i <= maxBin; i++) {
-                let v = freqData[i];
-                if (v > peakVal) peakVal = v;
-                sumVal += v;
-                count++;
-            }
-            let meanVal = (sumVal / Math.max(1, count)) + 1;
-            let tonality = peakVal / meanVal;
-
-            // 純音 beep 特徵：峰值音量高 (>165) 且能量高度集中於單一頻率 (tonality > 7.5)
-            if (peakVal > 165 && tonality > 7.5 && (elapsedSec - lastDetectedBeepAudioTime) > 2.5) {
-                lastDetectedBeepAudioTime = elapsedSec;
-
-                // 1. 偵測到起跑前導語音後的第 1 聲起跑 BEEP_0 (約在 8.0s ~ 14.5s 之間)
-                if (!autoCalibratedStart && elapsedSec >= 8.0 && elapsedSec <= 14.5) {
-                    autoCalibratedStart = true;
-                    baseStartBeepTime = elapsedSec;
-                    buildShuttleSchedule();
-                    updateSyncLabel(true);
-                    flashStatusBanner();
-                    return;
-                }
-
-                // 2. 偵測到後續各趟的 BEEP，若與預測時間差在 ±1.2s 內，微調基準時間使其嚴絲合縫對齊
-                let nearestShuttle = null;
-                let minDiff = 999;
-                for (let s of SHUTTLE_SCHEDULE) {
-                    let diff = elapsedSec - s.startBeepTime;
-                    if (Math.abs(diff) < minDiff) {
-                        minDiff = Math.abs(diff);
-                        nearestShuttle = s;
-                    }
-                }
-                if (nearestShuttle && minDiff > 0.06 && minDiff < 1.2) {
-                    baseStartBeepTime += (elapsedSec - nearestShuttle.startBeepTime);
-                    buildShuttleSchedule();
-                    updateSyncLabel(true);
-                    flashStatusBanner();
-                }
-            }
-        }
-
-        function adjustSyncOffset(delta) {
-            manualSyncOffset = Math.round((manualSyncOffset + delta) * 10) / 10;
-            buildShuttleSchedule();
-            updateSyncLabel(autoCalibratedStart);
-        }
-
-        function updateSyncLabel(isLocked) {
-            const el = document.getElementById('sync-offset-label');
-            const sign = manualSyncOffset > 0 ? '+' : '';
-            el.innerText = isLocked
-                ? `✅ 已與音檔 BEEP 鎖定對齊 (微調: ${sign}${manualSyncOffset.toFixed(1)}s)`
-                : `音訊自動偵測鎖定中 (微調: ${sign}${manualSyncOffset.toFixed(1)}s)`;
-        }
-
-        function flashStatusBanner() {
-            const banner = document.getElementById('status-banner');
-            banner.classList.add('beep-flash');
-            setTimeout(() => banner.classList.remove('beep-flash'), 220);
-        }
-
         /**
-         * 取得裁判點擊按鈕時，所判定失敗的趟次 y：
-         * • 在第 y 趟進行中（startBeepTime <= t < endBeepTime）：正在跑第 y 趟 -> 判定為第 y 趟失敗。
-         * • 在第 y 趟結束響鈴（endBeepTime = BEEP_y）後的 2.5 秒反應視窗內：
-         *   受測者於 BEEP_y 響起時未能觸線，裁判在響鈴後 0 ~ 2.5 秒內按下按鈕 -> 仍判定為第 y 趟失敗！
+         * 取得裁判點擊按鈕時所判定的失敗趟次 y：
+         * • 在第 y 趟進行期間（包含音檔唸「第 x 級 第 y 趟 3 2 1」時），皆屬於第 y 趟。
+         * • 第 y 趟結束 beep 響起後的 2.5 秒反應緩衝視窗內點擊，仍判定為第 y 趟未能及時觸線。
          */
         function getJudgedFailLap(elapsedSec) {
-            if (SHUTTLE_SCHEDULE.length === 0) return 1;
-            if (elapsedSec < SHUTTLE_SCHEDULE[0].startBeepTime) return 1;
+            if (elapsedSec < START_BEEP_TIME) return 1;
 
             for (let i = 0; i < SHUTTLE_SCHEDULE.length; i++) {
                 let s = SHUTTLE_SCHEDULE[i];
@@ -424,10 +303,10 @@
         let customAudioUrl = null;
         let timerInterval = null;
 
-        // 目前正在進行的趟次 (與紅框及 BEEP 100% 同步)
+        // 目前正在進行的趟次
         let activeLevel = 0;
-        let activeLapNumber = 0;    // 正在進行第幾趟 (1-based)
-        let completedValidLaps = 0; // 已響鈴完成的趟數 (= activeLapNumber - 1)
+        let activeLapNumber = 0;
+        let completedValidLaps = 0;
         let lastBannerKey = "";
 
         // --- 網頁載入：初始化相機選項與檢查內建音訊檔 ---
@@ -545,11 +424,11 @@
                 id: index,
                 lane: index + 1,
                 name: name,
-                failCount: 0,           // 0: 正常, 1: 失敗1次(紅燈), 2: 失敗2次(測驗結束)
+                failCount: 0,
                 isFinished: false,
-                fail1Lap: 0,            // 記錄第 1 次失敗發生在總第幾趟
-                fail2Lap: 0,            // 記錄第 2 次失敗發生在總第幾趟
-                finalTotalLaps: 0,      // 最終完成的有效總趟數
+                fail1Lap: 0,
+                fail2Lap: 0,
+                finalTotalLaps: 0,
                 finalLevel: 0,
                 finalLapInLevel: 0,
                 fail1Record: "-",
@@ -581,11 +460,6 @@
             activeLapNumber = 0;
             completedValidLaps = 0;
             lastBannerKey = "";
-            autoCalibratedStart = false;
-            lastDetectedBeepAudioTime = -10;
-            baseStartBeepTime = 11.50;
-            buildShuttleSchedule();
-            updateSyncLabel(false);
 
             document.getElementById('disp-level').innerText = "0";
             document.getElementById('disp-active-lap').innerText = "0";
@@ -594,15 +468,10 @@
         }
 
         // ==========================================
-        // 測驗主計時與官方音訊同步迴圈
+        // 測驗主計時與標準 PACER 時間軸同步迴圈
         // ==========================================
         function startPacerTest() {
             if (isRunning && !isPaused) return;
-
-            initBeepDetector();
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
 
             const player = document.getElementById('pacer-audio-player');
             player.play().then(() => {
@@ -657,9 +526,6 @@
             const player = document.getElementById('pacer-audio-player');
             let elapsedSec = player.currentTime;
 
-            // 即時偵測官方音訊中的純音 BEEP 並自動對齊時間軸
-            detectLiveBeep(elapsedSec);
-
             // 更新經過時間顯示
             let mins = Math.floor(elapsedSec / 60);
             let secs = Math.floor(elapsedSec % 60);
@@ -671,9 +537,8 @@
                 return;
             }
 
-            // 1. 起跑前導階段（「測驗即將開始 5、4、3、2、1」，尚未響起跑 BEEP_0）
-            let firstStart = SHUTTLE_SCHEDULE[0].startBeepTime;
-            if (elapsedSec < firstStart) {
+            // 1. 起跑前導階段（「測驗即將開始 5 4 3 2 1」，尚未響起跑 beep）
+            if (elapsedSec < START_BEEP_TIME) {
                 activeLevel = 0;
                 activeLapNumber = 0;
                 completedValidLaps = 0;
@@ -683,12 +548,12 @@
 
                 if (lastBannerKey !== "prep") {
                     lastBannerKey = "prep";
-                    document.getElementById('status-banner').innerText = "📢 測驗即將開始：5、4、3、2、1（等待起跑 BEEP）";
+                    document.getElementById('status-banner').innerText = "📢 測驗即將開始：5、4、3、2、1";
                 }
                 return;
             }
 
-            // 2. 尋找目前正在進行的趟次（於 startBeepTime 響鈴當下立即切換，直至 endBeepTime 響鈴結束該趟）
+            // 2. 尋找目前正在進行的趟次（於 startBeepTime 響鈴後進入第 y 趟，直到 endBeepTime 響鈴才進入第 y+1 趟）
             let currentShuttle = SHUTTLE_SCHEDULE.find(s => elapsedSec >= s.startBeepTime && elapsedSec < s.endBeepTime);
 
             if (!currentShuttle) {
@@ -699,17 +564,16 @@
 
             activeLevel = currentShuttle.level;
             activeLapNumber = currentShuttle.totalLap;
-            completedValidLaps = currentShuttle.totalLap - 1; // 正在進行第 y 趟，代表已完成 y-1 趟
+            completedValidLaps = currentShuttle.totalLap - 1;
 
             document.getElementById('disp-level').innerText = activeLevel;
             document.getElementById('disp-active-lap').innerText = activeLapNumber;
             document.getElementById('disp-completed-laps').innerText = completedValidLaps;
 
-            // 3. 在每聲 BEEP 響起的瞬間，紅框即刻切換顯示該趟「第 x 級 - 第 y 趟」
+            // 3. 更新狀態提示列：當「第 x 級 第 y 趟 3 2 1」播報時仍顯示第 y 趟，beep 響起後才切換為第 y+1 趟
             let bannerKey = `active-${currentShuttle.totalLap}`;
             if (lastBannerKey !== bannerKey) {
                 lastBannerKey = bannerKey;
-                flashStatusBanner();
                 document.getElementById('status-banner').innerText = 
                     `🏃 第 ${currentShuttle.level} 級 - 第 ${currentShuttle.lapInLevel} 趟 (總計第 ${currentShuttle.totalLap} 趟)`;
             }
@@ -790,7 +654,6 @@
             // --- B. 正常判定模式 ---
             if (student.isFinished) return;
 
-            // 取得本次失敗發生的趟次 y（正在進行第 y 趟，或剛響完第 y 趟 BEEP 的 2.5 秒反應緩衝內）
             let y = getJudgedFailLap(player.currentTime);
             let shuttleObj = SHUTTLE_SCHEDULE.find(s => s.totalLap === y) || SHUTTLE_SCHEDULE[0];
             let recordLabel = `第${shuttleObj.level}級-第${shuttleObj.lapInLevel}趟`;
@@ -802,8 +665,8 @@
                 student.fail1Record = `${recordLabel} (總第${y}趟)`;
             } else if (student.failCount === 1) {
                 // 【第 2 次失敗】：發生在第 y 趟
-                // 1. 若第 1 次失敗發生在第 y-1 趟（連續兩趟失敗），則第 y-1 與第 y 趟皆未完成 -> 成績為 y - 2 趟
-                // 2. 若第 1 次失敗發生在更早之前（非連續），則僅第 y 趟未完成 -> 成績為 y - 1 趟
+                // 1. 連續兩趟失敗（第 y-1 趟與第 y 趟皆失敗）-> 成績為 y - 2 趟
+                // 2. 非連續失敗 -> 成績為 y - 1 趟
                 let isConsecutiveFail = (student.fail1Lap === y - 1);
                 let validResultLaps = isConsecutiveFail
                     ? Math.max(0, y - 2)
@@ -831,7 +694,6 @@
             renderGrid();
             updateSummaryStats();
 
-            // 檢查是否全班皆已結束測驗
             let allDone = students.every(s => s.isFinished);
             if (allDone) {
                 setTimeout(() => {
